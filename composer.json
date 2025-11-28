@@ -52,16 +52,22 @@
             "pestphp/pest-plugin": true
         }
     },
-    "scripts": {
-        "lint": "./vendor/bin/pint",
+        "scripts": {
+        "format": "./vendor/bin/pint",
         "refactor": "./vendor/bin/rector",
         "types": "./vendor/bin/phpstan",
         "test": "./vendor/bin/pest",
-        "check-all": [
+        "all": [
+            "@refactor",
+            "@format",
+            "@types",
+            "@test"
+        ],
+        "check": [
             "./vendor/bin/pint --test",
-            "./vendor/bin/pest --coverage --min=100",
-            "./vendor/bin/phpstan analyze",
-            "./vendor/bin/rector --dry-run"
+            "./vendor/bin/rector --dry-run",
+            "./vendor/bin/phpstan",
+            "./vendor/bin/pest --coverage --exactly=100"
         ]
     }
 }

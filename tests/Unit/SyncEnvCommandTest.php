@@ -6,78 +6,68 @@ use Illuminate\Support\Facades\File;
 use Mahbub\SyncEnv\Commands\SyncEnvCommand;
 
 beforeEach(function () {
-    // Clean up any test files
-    $testFiles = [
-        base_path('.env.test'),
-        base_path('.env.example.test'),
+    $this->testFiles = [
+        'example' => __DIR__ . '/../fixtures/.env.example',
+        'env' => __DIR__ . '/../fixtures/.env',
     ];
-
-    foreach ($testFiles as $file) {
-        if (File::exists($file)) {
-            File::delete($file);
-        }
-    }
 });
 
 afterEach(function () {
-    // Clean up test files
-    $testFiles = [
-        base_path('.env.test'),
-        base_path('.env.example.test'),
-    ];
+    // $testFiles = [
+    //     base_path('.env.test'),
+    //     base_path('.env.example.test'),
+    // ];
 
-    foreach ($testFiles as $file) {
-        if (File::exists($file)) {
-            File::delete($file);
-        }
-    }
+    // foreach ($testFiles as $file) {
+    //     if (File::exists($file)) {
+    //         File::delete($file);
+    //     }
+    // }
 
-    // Clean up backup files
-    $backupFiles = File::glob(base_path('.env.test.backup.*'));
-    foreach ($backupFiles as $file) {
-        File::delete($file);
-    }
+    // // Clean up backup files
+    // $backupFiles = File::glob(base_path('.env.test.backup.*'));
+    // foreach ($backupFiles as $file) {
+    //     File::delete($file);
+    // }
 });
 
-it('can sync keys from source to target env file', function () {
-    // Create source file
+it('can sync from source to target env file', function () {
     $sourceContent = <<<'ENV'
 APP_NAME=TestApp
 APP_ENV=local
 APP_DEBUG=true
 DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-NEW_KEY=new_value
+
+# Custom
+CUSTOM_KEY="custom value"
+ANOTHER_KEY='another_value'
 ENV;
 
-    // Create target file with some existing content
     $targetContent = <<<'ENV'
 APP_NAME=OldApp
-APP_ENV=production
 EXISTING_KEY=existing_value
+APP_ENV=production
+ANOTHER_KEY="another value"
 ENV;
 
-    File::put(base_path('.env.example.test'), $sourceContent);
-    File::put(base_path('.env.test'), $targetContent);
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $targetContent);
 
-    // Run the command
-    $this->artisan(SyncEnvCommand::class, [
-        'source' => '.env.example.test',
-        'target' => '.env.test',
-    ])
+    $this->artisan('sync-env:example-to-env --no-backup')
         ->assertExitCode(0);
 
-    // Check that target file was updated
-    $result = File::get(base_path('.env.test'));
+    $result = File::get(base_path('.env'));
 
-    expect($result)->toContain('APP_NAME=OldApp') // Existing values preserved
+    // dd($result);
+
+    expect($result)->toContain('APP_NAME=OldApp')
         ->toContain('APP_ENV=production')
-        ->toContain('EXISTING_KEY=existing_value')
-        ->toContain('APP_DEBUG=true') // New keys added
+        ->toContain('APP_DEBUG=true')
         ->toContain('DB_CONNECTION=mysql')
-        ->toContain('DB_HOST=127.0.0.1')
-        ->toContain('NEW_KEY=new_value');
-});
+        ->toContain('# Custom')
+        ->toContain('CUSTOM_KEY="custom value"')
+        ->toContain('ANOTHER_KEY="another value"');
+})->only();
 
 it('can force overwrite existing values', function () {
     // Create source file

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <testsuites>
-  <testsuite name="/home/zero/projects/packages/sync-env/phpunit.xml" tests="1" assertions="0" errors="0" failures="0" skipped="0" time="0.012384">
-    <testsuite name="Test Suite" tests="1" assertions="0" errors="0" failures="0" skipped="0" time="0.012384">
-      <testsuite name="Tests\Feature\SyncEnvCommandTest" file="tests/Feature/SyncEnvCommandTest.php" tests="1" assertions="0" errors="0" failures="0" skipped="0" time="0.012384">
-        <testcase name="`SyncEnvCommandTest` → it does something" file="tests/Feature/SyncEnvCommandTest.php::`SyncEnvCommandTest` → it does something" class="Tests\Feature\SyncEnvCommandTest" classname="Tests.Feature.SyncEnvCommandTest" assertions="0" time="0.012384"/>
+  <testsuite name="/home/zero/projects/packages/sync-env/phpunit.xml" tests="1" assertions="8" errors="0" failures="0" skipped="0" time="0.349834">
+    <testsuite name="Test Suite" tests="1" assertions="8" errors="0" failures="0" skipped="0" time="0.349834">
+      <testsuite name="Tests\Unit\SyncEnvCommandTest" file="tests/Unit/SyncEnvCommandTest.php" tests="1" assertions="8" errors="0" failures="0" skipped="0" time="0.349834">
+        <testcase name="it can sync from source to target env file" file="tests/Unit/SyncEnvCommandTest.php::it can sync from source to target env file" class="Tests\Unit\SyncEnvCommandTest" classname="Tests.Unit.SyncEnvCommandTest" assertions="8" time="0.349834"/>
       </testsuite>
     </testsuite>
   </testsuite>
