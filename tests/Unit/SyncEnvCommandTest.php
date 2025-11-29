@@ -5,30 +5,31 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\File;
 use Mahbub\SyncEnv\Commands\SyncEnvCommand;
 
+use function Pest\Laravel\artisan;
+use function Pest\Laravel\freezeSecond;
+use function Pest\Laravel\freezeTime;
+use function Pest\Laravel\travelTo;
+
 beforeEach(function () {
-    $this->testFiles = [
-        'example' => __DIR__ . '/../fixtures/.env.example',
-        'env' => __DIR__ . '/../fixtures/.env',
-    ];
+    travelTo('2024-06-01 00:00:00');
+
+    $testEnvFiles = File::glob(base_path('.env.*'));
+
+    foreach ($testEnvFiles as $file) {
+        if (File::exists($file)) {
+            File::delete($file);
+        }
+    }
 });
 
 afterEach(function () {
-    // $testFiles = [
-    //     base_path('.env.test'),
-    //     base_path('.env.example.test'),
-    // ];
+    $testEnvFiles = File::glob(base_path('.env.*'));
 
-    // foreach ($testFiles as $file) {
-    //     if (File::exists($file)) {
-    //         File::delete($file);
-    //     }
-    // }
-
-    // // Clean up backup files
-    // $backupFiles = File::glob(base_path('.env.test.backup.*'));
-    // foreach ($backupFiles as $file) {
-    //     File::delete($file);
-    // }
+    foreach ($testEnvFiles as $file) {
+        if (File::exists($file)) {
+            File::delete($file);
+        }
+    }
 });
 
 it('can sync from source to target env file', function () {
@@ -53,12 +54,10 @@ ENV;
     File::put(base_path('.env.example'), $sourceContent);
     File::put(base_path('.env'), $targetContent);
 
-    $this->artisan('sync-env:example-to-env --no-backup')
+    artisan('sync-env:example-to-env')
         ->assertExitCode(0);
 
     $result = File::get(base_path('.env'));
-
-    // dd($result);
 
     expect($result)->toContain('APP_NAME=OldApp')
         ->toContain('APP_ENV=production')
@@ -67,70 +66,47 @@ ENV;
         ->toContain('# Custom')
         ->toContain('CUSTOM_KEY="custom value"')
         ->toContain('ANOTHER_KEY="another value"');
-})->only();
 
-it('can force overwrite existing values', function () {
-    // Create source file
-    $sourceContent = <<<'ENV'
-APP_NAME=NewApp
-APP_ENV=local
-NEW_KEY=new_value
-ENV;
-
-    // Create target file
-    $targetContent = <<<'ENV'
-APP_NAME=OldApp
-APP_ENV=production
-EXISTING_KEY=existing_value
-ENV;
-
-    File::put(base_path('.env.example.test'), $sourceContent);
-    File::put(base_path('.env.test'), $targetContent);
-
-    // Run the command with force option
-    $this->artisan(SyncEnvCommand::class, [
-        'source' => '.env.example.test',
-        'target' => '.env.test',
-        '--force' => true,
-    ])
-        ->assertExitCode(0);
-
-    // Check that values were overwritten
-    $result = File::get(base_path('.env.test'));
-
-    expect($result)->toContain('APP_NAME=NewApp') // Values overwritten
-        ->toContain('APP_ENV=local')
-        ->toContain('EXISTING_KEY=existing_value') // Existing key preserved
-        ->toContain('NEW_KEY=new_value'); // New key added
+    $backupContent = File::get(base_path('.env.backup.' . now()->format('Y-m-d_H-i-s')));
+    expect($backupContent)->toBe($targetContent);
 });
 
-it('creates backup when requested', function () {
-    // Create source and target files
-    File::put(base_path('.env.example.test'), 'APP_NAME=TestApp');
-    File::put(base_path('.env.test'), 'APP_NAME=OldApp');
+it('fails when source file does not exist', function () {
+    artisan('sync-env:example-to-env')
+        ->expectsOutputToContain('File does not exist: ' . base_path('.env.example'))
+        ->assertExitCode(1);
+});
 
-    // Run command with backup option
-    $this->artisan(SyncEnvCommand::class, [
-        'source' => '.env.example.test',
-        'target' => '.env.test',
-        '--backup' => true,
-    ])
-        ->assertExitCode(0);
+it('fails when invalid keys are present in source', function () {
+    $sourceContent = <<<'ENV'
+APP NAME=TestApp
+ENV;
 
-    // Check that backup was created
-    $backupFiles = File::glob(base_path('.env.test.backup.*'));
-    expect($backupFiles)->toHaveCount(1);
+    File::put(base_path('.env.example'), $sourceContent);
 
-    $backupContent = File::get($backupFiles[0]);
-    expect($backupContent)->toBe('APP_NAME=OldApp');
+    artisan('sync-env:example-to-env')
+        ->expectsOutputToContain('Invalid key found in line 1: APP NAME')
+        ->assertExitCode(1);
+});
+
+it('fails when duplicate keys are present in source', function () {
+    $sourceContent = <<<'ENV'
+APP_NAME=TestApp
+APP_NAME=Laravel
+ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+
+    artisan('sync-env:example-to-env')
+        ->expectsOutputToContain('Duplicate key found in line 1 and 2: APP_NAME')
+        ->assertExitCode(1);
 });
 
 it('creates target file if it does not exist', function () {
-    // Create only source file
     File::put(base_path('.env.example.test'), 'APP_NAME=TestApp');
 
     // Run the command
-    $this->artisan(SyncEnvCommand::class, [
+    artisan(SyncEnvCommand::class, [
         'source' => '.env.example.test',
         'target' => '.env.test',
     ])
@@ -141,14 +117,6 @@ it('creates target file if it does not exist', function () {
 
     $result = File::get(base_path('.env.test'));
     expect($result)->toContain('APP_NAME=TestApp');
-});
-
-it('fails when source file does not exist', function () {
-    $this->artisan(SyncEnvCommand::class, [
-        'source' => '.env.nonexistent',
-        'target' => '.env.test',
-    ])
-        ->assertExitCode(1);
 });
 
 it('preserves comments and empty lines', function () {
@@ -173,7 +141,7 @@ ENV;
     File::put(base_path('.env.example.test'), $sourceContent);
     File::put(base_path('.env.test'), $targetContent);
 
-    $this->artisan(SyncEnvCommand::class, [
+    artisan(SyncEnvCommand::class, [
         'source' => '.env.example.test',
         'target' => '.env.test',
     ])

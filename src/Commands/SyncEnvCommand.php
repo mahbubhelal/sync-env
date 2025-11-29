@@ -26,6 +26,7 @@ class SyncEnvCommand extends Command
             return 0;
         } catch (Exception $e) {
             $this->error('An error occurred: ' . $e->getMessage());
+            // dd($e->getMessage());
 
             return 1;
         }
@@ -48,18 +49,19 @@ class SyncEnvCommand extends Command
             $this->info("Created empty file: {$targetPath}");
         }
 
+        $sourceData = $this->parseEnvFile($sourcePath);
+        $targetData = $this->parseEnvFile($targetPath);
+
+        $this->checkForInvalidKeys($sourceData);
+        $this->checkForDuplicateKeys($sourceData);
+
         if (!$this->option('no-backup')) {
-            $backupPath = $targetPath . '.backup.' . date('Y-m-d_H-i-s');
+            $backupPath = $targetPath . '.backup.' . now()->format('Y-m-d_H-i-s');
 
             File::copy($targetPath, $backupPath);
 
             $this->info("Backup created: {$backupPath}");
         }
-
-        $sourceData = $this->parseEnvFile($sourcePath);
-        $targetData = $this->parseEnvFile($targetPath);
-
-        $this->checkForDuplicateKeys($sourceData);
 
         $targetKeyValue = collect($targetData)->keyBy('key')->all();
         $warnings = 0;
@@ -110,8 +112,6 @@ class SyncEnvCommand extends Command
     {
         $content = File::get($path);
 
-        $this->validateEnv($content);
-
         $lines = preg_split("/(\r\n|\n|\r)/", $content);
 
         if ($lines === false) {
@@ -122,8 +122,6 @@ class SyncEnvCommand extends Command
         $lineData = [];
 
         foreach ($lines as $line) {
-            $line = trim($line);
-
             $key = null;
             $value = null;
 
@@ -146,9 +144,19 @@ class SyncEnvCommand extends Command
         return $lineData;
     }
 
-    private function validateEnv(string $content): void
+    private function checkForInvalidKeys(array $data): void
     {
-        Dotenv::parse($content);
+        foreach ($data as $lineNumber => $entry) {
+            if ($entry['is_comment'] || $entry['is_empty']) {
+                continue;
+            }
+
+            $key = $entry['key'];
+            if ($key === null || preg_match('/^[A-Z][A-Z0-9_]+$/', $key) !== 1) {
+                throw new Exception("Invalid key found in line {$lineNumber}: {$key}");
+            }
+        }
+        // dd($data);
     }
 
     private function checkForDuplicateKeys(array $data): void
@@ -162,7 +170,7 @@ class SyncEnvCommand extends Command
             $key = $entry['key'];
             if ($key !== null) {
                 if (isset($keys[$key])) {
-                    throw new Exception("Duplicate key '{$key}' found at line {$keys[$key]} and {$lineNumber}.");
+                    throw new Exception("Duplicate key found in line {$keys[$key]} and {$lineNumber}: {$key}");
                 }
 
                 $keys[$key] = $lineNumber;
