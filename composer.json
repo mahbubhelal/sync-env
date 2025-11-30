@@ -21,7 +21,7 @@
         "php": "^8.3"
     },
     "require-dev": {
-        "orchestra/testbench": "^9.5",
+        "orchestra/testbench": "^10.8",
         "pestphp/pest": "^3.5",
         "laravel/pint": "^1.18",
         "larastan/larastan": "^3.0",

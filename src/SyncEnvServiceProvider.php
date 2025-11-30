@@ -7,10 +7,10 @@ namespace Mahbub\SyncEnv;
 use Illuminate\Support\ServiceProvider;
 use Mahbub\SyncEnv\Commands\SyncEnvCommand;
 
-class SyncEnvServiceProvider extends ServiceProvider
+final class SyncEnvServiceProvider extends ServiceProvider
 {
     #[\Override]
-    public function register() {}
+    public function register(): void {}
 
     public function boot(): void
     {

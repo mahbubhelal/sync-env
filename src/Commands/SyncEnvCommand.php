@@ -4,14 +4,11 @@ declare(strict_types=1);
 
 namespace Mahbub\SyncEnv\Commands;
 
+use Exception;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
-use Dotenv\Dotenv;
-use Dotenv\Exception\ValidationException;
-use Throwable;
-use Exception;
 
-class SyncEnvCommand extends Command
+final class SyncEnvCommand extends Command
 {
     protected $signature = 'sync-env:example-to-env
                             {--no-backup : Do not create a backup of the target .env file before syncing}';
@@ -54,6 +51,7 @@ class SyncEnvCommand extends Command
 
         $this->checkForInvalidKeys($sourceData);
         $this->checkForDuplicateKeys($sourceData);
+        $this->checkForInvalidValues($sourceData);
 
         if (!$this->option('no-backup')) {
             $backupPath = $targetPath . '.backup.' . now()->format('Y-m-d_H-i-s');
@@ -79,13 +77,14 @@ class SyncEnvCommand extends Command
                     $this->warn(
                         "Comment differs at line {$lineNumber}:\n" .
                             "Source: {$data['raw']}\n" .
-                            "Target: " . ($targetData[$lineNumber]['raw'] ?? 'N/A')
+                            'Target: ' . ($targetData[$lineNumber]['raw'] ?? 'N/A')
                     );
                 }
 
                 $targetContent[] = $data['raw'];
 
                 $warnings++;
+
                 continue;
             }
 
@@ -96,7 +95,7 @@ class SyncEnvCommand extends Command
                 $this->warn(
                     "Key differs at line {$lineNumber}:\n" .
                         "Source: {$data['key']}={$data['value']}\n" .
-                        "Target: " . ($targetData[$lineNumber]['key'] ?? 'N/A')
+                        'Target: ' . ($targetData[$lineNumber]['key'] ?? 'N/A')
                 );
 
                 $warnings++;
@@ -147,10 +146,12 @@ class SyncEnvCommand extends Command
     private function checkForInvalidKeys(array $data): void
     {
         foreach ($data as $lineNumber => $entry) {
-            if ($entry['is_comment'] || $entry['is_empty']) {
+            if ($entry['is_comment']) {
                 continue;
             }
-
+            if ($entry['is_empty']) {
+                continue;
+            }
             $key = $entry['key'];
             if ($key === null || preg_match('/^[A-Z][A-Z0-9_]+$/', $key) !== 1) {
                 throw new Exception("Invalid key found in line {$lineNumber}: {$key}");

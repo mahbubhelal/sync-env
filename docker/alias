@@ -1,0 +1,7 @@
+alias a="runuser -u www-data -- php artisan"
+alias at="runuser -u www-data -- php artisan tinker"
+alias ar="php artisan"
+alias art="php artisan tinker"
+alias la="ls -la"
+alias pe="./vendor/bin/pest"
+alias pf="./vendor/bin/pest --filter"

@@ -6,7 +6,7 @@ namespace Mahbub\SyncEnv\Tests;
 
 use Mahbub\SyncEnv\SyncEnvServiceProvider;
 
-class TestCase extends \Orchestra\Testbench\TestCase
+abstract class TestCase extends \Orchestra\Testbench\TestCase
 {
     public function getEnvironmentSetUp($app): void
     {
