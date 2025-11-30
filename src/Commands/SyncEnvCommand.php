@@ -146,13 +146,12 @@ final class SyncEnvCommand extends Command
     private function checkForInvalidKeys(array $data): void
     {
         foreach ($data as $lineNumber => $entry) {
-            if ($entry['is_comment']) {
+            if ($entry['is_empty'] || $entry['is_comment']) {
                 continue;
             }
-            if ($entry['is_empty']) {
-                continue;
-            }
+
             $key = $entry['key'];
+
             if ($key === null || preg_match('/^[A-Z][A-Z0-9_]+$/', $key) !== 1) {
                 throw new Exception("Invalid key found in line {$lineNumber}: {$key}");
             }
@@ -163,19 +162,35 @@ final class SyncEnvCommand extends Command
     private function checkForDuplicateKeys(array $data): void
     {
         $keys = [];
+
         foreach ($data as $lineNumber => $entry) {
-            if ($entry['is_comment']) {
+            if ($entry['is_empty'] || $entry['is_comment'] || $entry['key'] === null) {
                 continue;
             }
 
             $key = $entry['key'];
-            if ($key !== null) {
-                if (isset($keys[$key])) {
-                    throw new Exception("Duplicate key found in line {$keys[$key]} and {$lineNumber}: {$key}");
-                }
 
-                $keys[$key] = $lineNumber;
+            if (isset($keys[$key])) {
+                throw new Exception("Duplicate key found in line {$keys[$key]} and {$lineNumber}: {$key}");
+            }
+
+            $keys[$key] = $lineNumber;
+        }
+    }
+
+    private function checkForInvalidValues(array $data): void
+    {
+        foreach ($data as $lineNumber => $entry) {
+            if ($entry['is_empty'] || $entry['is_comment'] || $entry['value'] === null) {
+                continue;
+            }
+
+            $value = $entry['value'];
+
+            if (preg_match('/^+$/', $key) !== 1) {
+                throw new Exception("Invalid key found in line {$lineNumber}: {$key}");
             }
         }
+        // dd($data);
     }
 }
