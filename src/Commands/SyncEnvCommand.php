@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Mahbub\SyncEnv\Commands;
 
+use Dotenv\Dotenv;
 use Exception;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 
 final class SyncEnvCommand extends Command
 {
@@ -33,6 +35,7 @@ final class SyncEnvCommand extends Command
     {
         $sourcePath = base_path('.env.example');
         $targetPath = base_path('.env');
+        // $sourcePath = __DIR__ . '/../../.env';
 
         if (!File::exists($sourcePath)) {
             throw new Exception("File does not exist: {$sourcePath}");
@@ -83,7 +86,7 @@ final class SyncEnvCommand extends Command
 
                 $targetContent[] = $data['raw'];
 
-                $warnings++;
+                ++$warnings;
 
                 continue;
             }
@@ -98,7 +101,7 @@ final class SyncEnvCommand extends Command
                         'Target: ' . ($targetData[$lineNumber]['key'] ?? 'N/A')
                 );
 
-                $warnings++;
+                ++$warnings;
             }
 
             $targetContent[] = "{$key}={$value}";
@@ -137,7 +140,7 @@ final class SyncEnvCommand extends Command
                 'is_empty' => $line === '',
             ];
 
-            $lineNumber++;
+            ++$lineNumber;
         }
 
         return $lineData;
@@ -146,17 +149,24 @@ final class SyncEnvCommand extends Command
     private function checkForInvalidKeys(array $data): void
     {
         foreach ($data as $lineNumber => $entry) {
-            if ($entry['is_empty'] || $entry['is_comment']) {
+            if ($entry['is_empty']) {
+                continue;
+            }
+
+            if ($entry['is_comment']) {
                 continue;
             }
 
             $key = $entry['key'];
 
+            if (Str::startsWith($key, ' ') || Str::endsWith($key, ' ')) {
+                throw new Exception("Invalid key found in line {$lineNumber}: {$key}. Leading or trailing spaces are not allowed.");
+            }
+
             if ($key === null || preg_match('/^[A-Z][A-Z0-9_]+$/', $key) !== 1) {
-                throw new Exception("Invalid key found in line {$lineNumber}: {$key}");
+                throw new Exception("Invalid key found in line {$lineNumber}: {$key}. Keys must start with an uppercase letter and contain only uppercase letters, numbers, and underscores.");
             }
         }
-        // dd($data);
     }
 
     private function checkForDuplicateKeys(array $data): void
@@ -164,7 +174,15 @@ final class SyncEnvCommand extends Command
         $keys = [];
 
         foreach ($data as $lineNumber => $entry) {
-            if ($entry['is_empty'] || $entry['is_comment'] || $entry['key'] === null) {
+            if ($entry['is_empty']) {
+                continue;
+            }
+
+            if ($entry['is_comment']) {
+                continue;
+            }
+
+            if ($entry['key'] === null) {
                 continue;
             }
 
@@ -181,16 +199,31 @@ final class SyncEnvCommand extends Command
     private function checkForInvalidValues(array $data): void
     {
         foreach ($data as $lineNumber => $entry) {
-            if ($entry['is_empty'] || $entry['is_comment'] || $entry['value'] === null) {
+            if ($entry['is_empty']) {
+                continue;
+            }
+
+            if ($entry['is_comment']) {
+                continue;
+            }
+
+            if ($entry['value'] === null) {
                 continue;
             }
 
             $value = $entry['value'];
 
-            if (preg_match('/^+$/', $key) !== 1) {
-                throw new Exception("Invalid key found in line {$lineNumber}: {$key}");
+            if (Str::startsWith($value, ' ') || Str::endsWith($value, ' ')) {
+                throw new Exception("Invalid value  found in line {$lineNumber}: {$value}. Error: Leading or trailing spaces are not allowed.");
+            }
+
+            try {
+                Dotenv::parse($entry['raw']);
+            } catch (Exception $e) {
+                $message = str_replace('Failed to parse dotenv file. ', '', $e->getMessage());
+
+                throw new Exception("Invalid value found in line {$lineNumber}: {$message}", $e->getCode(), $e);
             }
         }
-        // dd($data);
     }
 }
