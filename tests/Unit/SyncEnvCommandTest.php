@@ -185,6 +185,29 @@ it('fails when invalid values are present in source', function ($lines, $expecte
     ],
 ]]);
 
+it('creates a backup of the target file before syncing', function (): void {
+    $sourceContent = <<<'ENV'
+    APP_NAME=TestApp
+    ENV;
+
+    $targetContent = <<<'ENV'
+    APP_VERSION=1.0
+    APP_NAME=OldApp
+    ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $targetContent);
+    $backupPath = base_path('.env.backup.' . now()->format('Y-m-d_H-i-s'));
+
+    expect(File::exists($backupPath))->toBeFalse();
+
+    artisan('sync-env:example-to-env')
+        ->assertExitCode(0);
+
+    expect(File::exists($backupPath))->toBeTrue();
+    expect(File::get($backupPath))->toBe($targetContent);
+});
+
 it('preserves comments and empty lines', function (): void {
     $sourceContent = <<<'ENV'
     # Application Configuration
