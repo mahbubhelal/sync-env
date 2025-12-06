@@ -9,13 +9,14 @@ use Exception;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\App;
 
-final class SyncEnvCommand extends Command
+final class SyncExampleToEnvsCommand extends Command
 {
-    protected $signature = 'sync-env:example-to-env
+    protected $signature = 'sync-env:example-to-envs
                             {--no-backup : Do not create a backup of the target .env file before syncing}';
 
-    protected $description = 'Sync environment keys from one env file to another';
+    protected $description = 'Sync environment keys from one the .env.example file to other .env files, preserving existing values in the target files.';
 
     public function handle(): int
     {
@@ -33,29 +34,58 @@ final class SyncEnvCommand extends Command
 
     public function process(): void
     {
-        $sourcePath = base_path('.env.example');
-        $targetPath = base_path('.env');
-        // $sourcePath = __DIR__ . '/../../.env';
-
-        if (!File::exists($sourcePath)) {
-            throw new Exception("File does not exist: {$sourcePath}");
+        if (App::environment() === 'workbench') {
+            App::setBasePath(getcwd());
         }
 
-        if (!File::exists($targetPath)) {
-            $this->info("File does not exist, creating: {$targetPath}");
+        $exampleEnvPath = base_path('.env.example');
+        $baseEnvPath = base_path('.env');
 
-            File::put($targetPath, '');
-
-            $this->info("Created empty file: {$targetPath}");
+        if (!File::exists($exampleEnvPath)) {
+            throw new Exception("The .env.example file does not exist in: " . base_path());
         }
 
-        $sourceData = $this->parseEnvFile($sourcePath);
-        $targetData = $this->parseEnvFile($targetPath);
+        if (!File::exists($baseEnvPath)) {
+            $this->info("The .env file does not exist in: " . base_path());
+
+            File::put($baseEnvPath, '');
+
+            $this->info("Created empty .env file in: " . base_path());
+        }
+
+        $allEnvFilePaths = File::glob(base_path('.env*'));
+        $additionalEnvFiles = collect($allEnvFilePaths)
+            ->reject(fn($path) => Str::match('/^\.env\..*?.backup\./', basename($path)))
+            ->map(fn($path) => basename($path));
+
+        $additionalEnvCount = $additionalEnvFiles->count();
+
+        if ($additionalEnvCount > 0) {
+            $this->info(sprintf(
+                'Found %d .env.* %s to sync: %s',
+                $additionalEnvCount,
+                Str::plural('file', $additionalEnvCount),
+                $additionalEnvFiles->implode(', ')
+            ));
+        } else {
+            $this->info('No additional .env.* files found to sync.');
+        }
+
+        $sourceData = $this->parseEnvFile($exampleEnvPath);
 
         $this->checkForInvalidKeys($sourceData);
         $this->checkForDuplicateKeys($sourceData);
         $this->checkForInvalidValues($sourceData);
 
+        $envFilesPathsToProcess = collect($allEnvFilePaths)->reject(fn($path) => $path === $exampleEnvPath);
+
+        foreach ($envFilesPathsToProcess as $envFilePath) {
+            $this->processEnvFile($envFilePath, $sourceData);
+        }
+    }
+
+    private function processEnvFile(string $targetPath, array $sourceData): void
+    {
         if (!$this->option('no-backup')) {
             $backupPath = $targetPath . '.backup.' . now()->format('Y-m-d_H-i-s');
 
@@ -64,6 +94,7 @@ final class SyncEnvCommand extends Command
             $this->info("Backup created: {$backupPath}");
         }
 
+        $targetData = $this->parseEnvFile($targetPath);
         $targetKeyValue = collect($targetData)->keyBy('key')->all();
         $warnings = 0;
         $targetContent = [];
@@ -78,15 +109,15 @@ final class SyncEnvCommand extends Command
             if ($data['is_comment']) {
                 if (!isset($targetData[$lineNumber]) || $targetData[$lineNumber]['raw'] !== $data['raw']) {
                     $this->warn(
-                        "Comment differs at line {$lineNumber}:\n" .
-                            "Source: {$data['raw']}\n" .
-                            'Target: ' . ($targetData[$lineNumber]['raw'] ?? 'N/A')
+                        "Comment differs at line {$lineNumber}:\n"
+                            . "Source: {$data['raw']}\n"
+                            . 'Target: ' . ($targetData[$lineNumber]['raw'] ?? 'N/A')
                     );
                 }
 
                 $targetContent[] = $data['raw'];
 
-                ++$warnings;
+                $warnings++;
 
                 continue;
             }
@@ -96,9 +127,9 @@ final class SyncEnvCommand extends Command
 
             if (!isset($targetData[$lineNumber]) || $targetData[$lineNumber]['key'] !== $data['key']) {
                 $this->warn(
-                    "Key differs at line {$lineNumber}:\n" .
-                        "Source: {$data['key']}={$data['value']}\n" .
-                        'Target: ' . ($targetData[$lineNumber]['key'] ?? 'N/A')
+                    "Key differs at line {$lineNumber}:\n"
+                        . "Source: {$data['key']}={$data['value']}\n"
+                        . 'Target: ' . ($targetData[$lineNumber]['key'] ?? 'N/A')
                 );
 
                 ++$warnings;

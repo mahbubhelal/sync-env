@@ -8,7 +8,7 @@ use function Pest\Laravel\artisan;
 use function Pest\Laravel\travelTo;
 
 beforeEach(function (): void {
-    travelTo('2024-06-01 00:00:00');
+    travelTo('2025-01-01 00:00:00');
 
     $testEnvFiles = File::glob(base_path('.env*'));
 
@@ -30,60 +30,115 @@ afterAll(function (): void {
 });
 
 it('can sync from source to target env file', function (): void {
-    $sourceContent = <<<'ENV_WRAP'
-    APP_NAME=TestApp
-    APP_ENV=local
-    APP_DEBUG=true
-    DB_CONNECTION=mysql
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        APP_ENV=local
+        APP_DEBUG=true
+        DB_CONNECTION=mysql
 
-    # Custom
-    CUSTOM_KEY="custom value"
-    ANOTHER_KEY='another_value'
-    ENV_WRAP;
+        # Custom
+        CUSTOM_KEY="custom value"
+        ANOTHER_KEY='another_value'
+        ENV;
 
-    $targetContent = <<<'ENV_WRAP'
-    APP_NAME=OldApp
-    EXISTING_KEY=existing_value
-    APP_ENV=production
-    ANOTHER_KEY="another value"
-    ENV_WRAP;
+    $targetContent = <<<'ENV'
+        APP_NAME=OldApp
+        EXISTING_KEY=existing_value
+        APP_ENV=production
+        ANOTHER_KEY="another value"
+        ENV;
 
     File::put(base_path('.env.example'), $sourceContent);
     File::put(base_path('.env'), $targetContent);
 
-    artisan('sync-env:example-to-env')
+    artisan('sync-env:example-to-envs')
         ->assertExitCode(0);
 
-    $result = File::get(base_path('.env'));
+    expect(File::get(base_path('.env')))->toBe(
+        <<<'ENV'
+            APP_NAME=OldApp
+            APP_ENV=production
+            APP_DEBUG=true
+            DB_CONNECTION=mysql
 
-    expect($result)->toContain('APP_NAME=OldApp')
-        ->toContain('APP_ENV=production')
-        ->toContain('APP_DEBUG=true')
-        ->toContain('DB_CONNECTION=mysql')
-        ->toContain('# Custom')
-        ->toContain('CUSTOM_KEY="custom value"')
-        ->toContain('ANOTHER_KEY="another value"');
+            # Custom
+            CUSTOM_KEY="custom value"
+            ANOTHER_KEY="another value"
+            ENV
+    );
 
-    $backupContent = File::get(base_path('.env.backup.' . now()->format('Y-m-d_H-i-s')));
-    expect($backupContent)->toBe($targetContent);
+    expect(File::get(base_path('.env.backup.') . now()->format('Y-m-d_H-i-s')))->toBe($targetContent);
+});
+
+
+it('can sync from source to multiple target env files', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        APP_ENV=local
+        APP_DEBUG=true
+        DB_CONNECTION=mysql
+
+        # Custom
+        CUSTOM_KEY="custom value"
+        ANOTHER_KEY='another_value'
+        ENV;
+
+    $targetContent = <<<'ENV'
+        APP_NAME=OldApp
+        EXISTING_KEY=existing_value
+        APP_ENV=production
+        ANOTHER_KEY="another value"
+        ENV;
+
+    $envFiles = [
+        '.env',
+        '.env.testing',
+        '.env.staging',
+        '.env.procution',
+    ];
+
+    File::put(base_path('.env.example'), $sourceContent);
+    foreach ($envFiles as $envFile) {
+        File::put(base_path($envFile), $targetContent);
+    }
+
+    artisan('sync-env:example-to-envs')
+        ->assertExitCode(0);
+
+    foreach ($envFiles as $envFile) {
+        expect(File::get(base_path($envFile)))->toBe(
+            <<<'ENV'
+                APP_NAME=OldApp
+                APP_ENV=production
+                APP_DEBUG=true
+                DB_CONNECTION=mysql
+
+                # Custom
+                CUSTOM_KEY="custom value"
+                ANOTHER_KEY="another value"
+                ENV
+        );
+
+        expect(File::get(base_path($envFile . '.backup.') . now()->format('Y-m-d_H-i-s')))->toBe($targetContent);
+    }
 });
 
 it('fails when source file does not exist', function (): void {
-    artisan('sync-env:example-to-env')
-        ->expectsOutputToContain('File does not exist: ' . base_path('.env.example'))
+    artisan('sync-env:example-to-envs')
+        ->expectsOutputToContain('The .env.example file does not exist in: ' . base_path())
         ->assertExitCode(1);
 });
 
 it('creates target file if it does not exist', function (): void {
     $sourceContent = <<<'ENV'
-    APP_NAME=TestApp
-    ENV;
+        APP_NAME=TestApp
+        ENV;
 
     File::put(base_path('.env.example'), 'APP_NAME=TestApp');
     $targetPath = base_path('.env');
 
     expect(File::exists($targetPath))->toBeFalse();
-    artisan('sync-env:example-to-env')
+    artisan('sync-env:example-to-envs')
         ->assertExitCode(0);
 
     expect(File::exists($targetPath))->toBeTrue();
@@ -92,108 +147,196 @@ it('creates target file if it does not exist', function (): void {
 
 it('fails when invalid keys are present in source', function (): void {
     $sourceContent = <<<'ENV'
-    APP NAME=TestApp
-    ENV;
+        APP NAME=TestApp
+        ENV;
 
     File::put(base_path('.env.example'), $sourceContent);
 
-    artisan('sync-env:example-to-env')
+    artisan('sync-env:example-to-envs')
         ->expectsOutputToContain('Invalid key found in line 1: APP NAME')
         ->assertExitCode(1);
 });
 
 it('fails when duplicate keys are present in source', function (): void {
     $sourceContent = <<<'ENV'
-    APP_NAME=TestApp
-    APP_NAME=Laravel
-    ENV;
+        APP_NAME=TestApp
+        APP_NAME=Laravel
+        ENV;
 
     File::put(base_path('.env.example'), $sourceContent);
 
-    artisan('sync-env:example-to-env')
+    artisan('sync-env:example-to-envs')
         ->expectsOutputToContain('Duplicate key found in line 1 and 2: APP_NAME')
         ->assertExitCode(1);
 });
 
-it('fails when invalid values are present in source', function ($lines, $expectedExitCodes): void {
-    $targetPath = base_path('.env');
+it('fails when invalid values are present in source', function ($line, $exitCode): void {
+    File::put(base_path('.env.example'), $line);
 
-    foreach (explode("\n", $lines) as $index => $content) {
-        File::put(base_path('.env.example'), $content);
-        artisan('sync-env:example-to-env')
-            ->expectsOutputToContain($expectedExitCodes[$index] !== 0)
-            ->assertExitCode($expectedExitCodes[$index]);
+    artisan('sync-env:example-to-envs')
+        ->assertExitCode($exitCode);
 
-        if ($expectedExitCodes[$index] === 0) {
-            expect(File::get($targetPath))->toContain($content);
-        } else {
-            expect(File::get($targetPath))->toContain('');
-        }
+    if ($exitCode === 0) {
+        expect(File::get(base_path('.env')))->toBe($line);
+    } else {
+        expect(File::get(base_path('.env')))->toBe('');
     }
-})->with([[
-    <<<'ENV'
-    SINGLE_VALUE=single
-    IN_SINGLE_QUOTES='single quotes'
-    IN_DOUBLE_QUOTES="double quotes"
-    NESTED_QUOTES="nested 'single' quotes"
-    ESCAPED_QUOTES="escaped \"double\" quotes"
-    NESTED_SINGLE_QUOTES='nested "double" quotes'
-    ESCAPED_DOUBLE_QUOTES="escaped \"double\" quotes with 'single' quotes"
-    ANOTHER_KEY_REFERENCE=${SINGLE_VALUE}_reference
-    ANOTHER_KEY_IN_SINGLE_QUOTES='${SINGLE_VALUE}_in_quotes'
-    MISSING="${_VALUE}_in_quotes"
-    ANOTHER_KEY_IN_DOUBLE_QUOTES="${SINGLE_VALUE}_in_quotes"
-    ANOTHER_KEY_WITH_ESCAPED_QUOTES="escaped \${SINGLE_VALUE}_in_quotes"
-    ANOTHER_KEY_IN_DOUBLE_QUOTES_WITH_ESCAPED_QUOTES="escaped \${SINGLE_VALUE}_in_quotes with \"double\" quotes"
-    INVALID_LEADING_SPACE= leadingSpace
-    INVALID_SPACE_WITHIN_VALUE=leading Space
-    INVALID_ESCAPED_SINGLE_QUOTES='escaped \'single\' quotes'
-    INVALID_NESTED_SINGLE_QUOTES_ESCAPED='nested \'single\' quotes with "double" quotes'
-    INVALID_UNCLOSED_SINGLE_QUOTES='unclosed single quotes
-    INVALID_ESCAPED_BACKSLASH_IN_SINGLE_QUOTES='escaped backslash at end of line\\
-    INVALID_QUOTES="mismatched 'quotes'""
-    INVALID_QUOTES_IN_SINGLE_QUOTES='mismatched "quotes"''
-    INVALID_VALUE_REFERENCE=${VAl UE}
-    INVALID_A_VALUE_REFERENCE=${ VAlUE}
-    INVALID_B_VALUE_REFERENCE=${VAlUE }
-    ENV,
+})->with([
     [
+        <<<'ENV'
+            SINGLE_VALUE=single
+            ENV,
         0,
+    ],
+    [
+        <<<'ENV'
+            IN_SINGLE_QUOTES='single quotes'
+            ENV,
         0,
+    ],
+    [
+        <<<'ENV'
+            IN_DOUBLE_QUOTES="double quotes"
+            ENV,
         0,
+    ],
+    [
+        <<<'ENV'
+            NESTED_QUOTES="nested 'single' quotes"
+            ENV,
         0,
+    ],
+    [
+        <<<'ENV'
+            ESCAPED_QUOTES="escaped \"double\" quotes"
+            ENV,
         0,
+    ],
+    [
+        <<<'ENV'
+            NESTED_SINGLE_QUOTES='nested "double" quotes'
+            ENV,
         0,
+    ],
+    [
+        <<<'ENV'
+            ESCAPED_DOUBLE_QUOTES="escaped \"double\" quotes with 'single' quotes"
+            ENV,
         0,
+    ],
+    [
+        <<<'ENV'
+            ANOTHER_KEY_REFERENCE=${SINGLE_VALUE}_reference
+            ENV,
         0,
+    ],
+    [
+        <<<'ENV'
+            ANOTHER_KEY_IN_SINGLE_QUOTES='${SINGLE_VALUE}_in_quotes'
+            ENV,
         0,
+    ],
+    [
+        <<<'ENV'
+            MISSING="${_VALUE}_in_quotes"
+            ENV,
         0,
+    ],
+    [
+        <<<'ENV'
+            ANOTHER_KEY_IN_DOUBLE_QUOTES="${SINGLE_VALUE}_in_quotes"
+            ENV,
         0,
+    ],
+    [
+        <<<'ENV'
+            ANOTHER_KEY_WITH_ESCAPED_QUOTES="escaped \${SINGLE_VALUE}_in_quotes"
+            ENV,
         0,
+    ],
+    [
+        <<<'ENV'
+            ANOTHER_KEY_IN_DOUBLE_QUOTES_WITH_ESCAPED_QUOTES="escaped \${SINGLE_VALUE}_in_quotes with \"double\" quotes"
+            ENV,
         0,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
+    ],
+    [
+        <<<'ENV'
+            INVALID_LEADING_SPACE= leadingSpace
+            ENV,
         1,
     ],
-]]);
+    [
+        <<<'ENV'
+            INVALID_SPACE_WITHIN_VALUE=leading Space
+            ENV,
+        1,
+    ],
+    [
+        <<<'ENV'
+            INVALID_ESCAPED_SINGLE_QUOTES='escaped \'single\' quotes'
+            ENV,
+        1,
+    ],
+    [
+        <<<'ENV'
+            INVALID_NESTED_SINGLE_QUOTES_ESCAPED='nested \'single\' quotes with "double" quotes'
+            ENV,
+        1,
+    ],
+    [
+        <<<'ENV'
+            INVALID_UNCLOSED_SINGLE_QUOTES='unclosed single quotes
+            ENV,
+        1,
+    ],
+    [
+        <<<'ENV'
+            INVALID_ESCAPED_BACKSLASH_IN_SINGLE_QUOTES='escaped backslash at end of line\\
+            ENV,
+        1,
+    ],
+    [
+        <<<'ENV'
+            INVALID_QUOTES="mismatched 'quotes'""
+            ENV,
+        1,
+    ],
+    [
+        <<<'ENV'
+            INVALID_QUOTES_IN_SINGLE_QUOTES='mismatched "quotes"''
+            ENV,
+        1,
+    ],
+    [
+        <<<'ENV'
+            INVALID_VALUE_REFERENCE=${VAl UE}
+            ENV,
+        1,
+    ],
+    [
+        <<<'ENV'
+            INVALID_A_VALUE_REFERENCE=${ VAlUE}
+            ENV,
+        1,
+    ],
+    [
+        <<<'ENV'
+            INVALID_B_VALUE_REFERENCE=${VAlUE }
+            ENV,
+        1,
+    ],
+]);
 
 it('creates a backup of the target file before syncing', function (): void {
     $sourceContent = <<<'ENV'
-    APP_NAME=TestApp
-    ENV;
+        APP_NAME=TestApp
+        ENV;
 
     $targetContent = <<<'ENV'
-    APP_VERSION=1.0
-    APP_NAME=OldApp
-    ENV;
+        APP_VERSION=1.0
+        APP_NAME=OldApp
+        ENV;
 
     File::put(base_path('.env.example'), $sourceContent);
     File::put(base_path('.env'), $targetContent);
@@ -201,7 +344,7 @@ it('creates a backup of the target file before syncing', function (): void {
 
     expect(File::exists($backupPath))->toBeFalse();
 
-    artisan('sync-env:example-to-env')
+    artisan('sync-env:example-to-envs')
         ->assertExitCode(0);
 
     expect(File::exists($backupPath))->toBeTrue();
@@ -210,25 +353,25 @@ it('creates a backup of the target file before syncing', function (): void {
 
 it('preserves comments and empty lines', function (): void {
     $sourceContent = <<<'ENV'
-    # Application Configuration
-    #APP_NAME=TestApp
+        # Application Configuration
+        #APP_NAME=TestApp
 
-    # Database Configuration
-    DB_CONNECTION=mysql
-    ENV;
+        # Database Configuration
+        DB_CONNECTION=mysql
+        ENV;
 
     $targetContent = <<<'ENV'
-    # My App Configuration
-    APP_NAME=OldApp
+        # My App Configuration
+        APP_NAME=OldApp
 
-    # Other settings
-    EXISTING_KEY=value
-    ENV;
+        # Other settings
+        EXISTING_KEY=value
+        ENV;
 
     File::put(base_path('.env.example'), $sourceContent);
     File::put(base_path('.env'), $targetContent);
 
-    artisan('sync-env:example-to-env')
+    artisan('sync-env:example-to-envs')
         ->assertExitCode(0);
 
     $result = File::get(base_path('.env'));

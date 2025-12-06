@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Mahbub\SyncEnv;
 
 use Illuminate\Support\ServiceProvider;
-use Mahbub\SyncEnv\Commands\SyncEnvCommand;
+use Mahbub\SyncEnv\Commands\SyncExampleToEnvsCommand;
 
 final class SyncEnvServiceProvider extends ServiceProvider
 {
@@ -16,7 +16,7 @@ final class SyncEnvServiceProvider extends ServiceProvider
     {
         if ($this->app->runningInConsole()) {
             $this->commands([
-                SyncEnvCommand::class,
+                SyncExampleToEnvsCommand::class,
             ]);
         }
     }
