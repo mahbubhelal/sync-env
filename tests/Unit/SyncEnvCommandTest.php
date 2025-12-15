@@ -70,7 +70,6 @@ it('can sync from source to target env file', function (): void {
     expect(File::get(base_path('.env.backup.') . now()->format('Y-m-d_H-i-s')))->toBe($targetContent);
 });
 
-
 it('can sync from source to multiple target env files', function (): void {
     $sourceContent = <<<'ENV'
         APP_NAME=TestApp
@@ -153,20 +152,41 @@ it('fails when invalid keys are present in source', function (): void {
     File::put(base_path('.env.example'), $sourceContent);
 
     artisan('sync-env:example-to-envs')
-        ->expectsOutputToContain('Invalid key found in line 1: APP NAME')
+        ->expectsOutputToContain('Invalid key found in line 1: APP NAME. Keys must start with an uppercase letter and contain only uppercase letters, numbers, and underscores.')
+        ->assertExitCode(1);
+
+    $sourceContent = <<<'ENV'
+         APPNAME=TestApp
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+
+    artisan('sync-env:example-to-envs')
+        ->expectsOutputToContain('Invalid key found in line 1:  APPNAME. Leading or trailing spaces are not allowed')
+        ->assertExitCode(1);
+
+    $sourceContent = <<<'ENV'
+        invalid
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+
+    artisan('sync-env:example-to-envs')
+        ->expectsOutputToContain('Invalid key found in line 1: . Keys must start with an uppercase letter and contain only uppercase letters, numbers, and underscores.')
         ->assertExitCode(1);
 });
 
 it('fails when duplicate keys are present in source', function (): void {
     $sourceContent = <<<'ENV'
         APP_NAME=TestApp
+
         APP_NAME=Laravel
         ENV;
 
     File::put(base_path('.env.example'), $sourceContent);
 
     artisan('sync-env:example-to-envs')
-        ->expectsOutputToContain('Duplicate key found in line 1 and 2: APP_NAME')
+        ->expectsOutputToContain('Duplicate key found in line 1 and 3: APP_NAME')
         ->assertExitCode(1);
 });
 
@@ -174,8 +194,8 @@ it('fails when invalid values are present in source', function ($line, $exitCode
     File::put(base_path('.env.example'), $line);
 
     artisan('sync-env:example-to-envs')
+        ->expectsOutputToContain($exitCode === 1 ? 'Invalid value found in line 1:' : null)
         ->assertExitCode($exitCode);
-
     if ($exitCode === 0) {
         expect(File::get(base_path('.env')))->toBe($line);
     } else {
@@ -376,4 +396,78 @@ it('preserves comments and empty lines', function (): void {
 
     $result = File::get(base_path('.env'));
     expect($result)->toBe($sourceContent);
+});
+
+it('outputs message when no additional .env.* files are found', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $sourceContent);
+
+    artisan('sync-env:example-to-envs')
+        ->expectsOutputToContain('No additional .env.* files found to sync.')
+        ->assertExitCode(0);
+});
+
+it('outputs message when additional .env.* files are found', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $sourceContent);
+    File::put(base_path('.env.testing'), $sourceContent);
+
+    artisan('sync-env:example-to-envs')
+        ->expectsOutputToContain('Found 1 .env.* file to sync: .env.testing')
+        ->assertExitCode(0);
+
+    File::put(base_path('.env.staging'), $sourceContent);
+    artisan('sync-env:example-to-envs')
+        ->expectsOutputToContain('Found 2 .env.* files to sync: .env.staging, .env.testing')
+        ->assertExitCode(0);
+});
+
+it('outputs warning for comment and key differences', function (): void {
+    $sourceContent = <<<'ENV'
+        # Comment 1
+        APP_NAME=TestApp
+        ENV;
+    $targetContent = <<<'ENV'
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $targetContent);
+
+    artisan('sync-env:example-to-envs')
+        ->expectsOutputToContain(<<<'STR'
+            Comment differs at line 1:
+                Source: # Comment 1
+                Target:
+            STR)
+        ->expectsOutputToContain(<<<'STR'
+            Key differs at line 2:
+                Source: APP_NAME=TestApp
+                Target: N/A
+            STR)
+        ->assertExitCode(0);
+});
+
+it('outputs warning for additional keys in target', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        ENV;
+    $targetContent = <<<'ENV'
+        APP_NAME=TestApp
+        EXTRA_KEY=extra
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $targetContent);
+
+    artisan('sync-env:example-to-envs')
+        ->expectsOutputToContain('Additional keys found in target file that are not present in source file: EXTRA_KEY')
+        ->assertExitCode(0);
 });

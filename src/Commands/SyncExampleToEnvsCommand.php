@@ -23,6 +23,9 @@ final class SyncExampleToEnvsCommand extends Command
         try {
             $this->process();
 
+            $this->newline();
+            $this->info('Environment files synchronized successfully.');
+
             return 0;
         } catch (Exception $e) {
             $this->error('An error occurred: ' . $e->getMessage());
@@ -35,7 +38,7 @@ final class SyncExampleToEnvsCommand extends Command
     public function process(): void
     {
         if (App::environment() === 'workbench') {
-            App::setBasePath(getcwd());
+            App::setBasePath(getcwd()); // @codeCoverageIgnore
         }
 
         $exampleEnvPath = base_path('.env.example');
@@ -53,11 +56,12 @@ final class SyncExampleToEnvsCommand extends Command
             $this->info("Created empty .env file in: " . base_path());
         }
 
-        $allEnvFilePaths = File::glob(base_path('.env*'));
-        $additionalEnvFiles = collect($allEnvFilePaths)
-            ->reject(fn($path) => Str::match('/^\.env\..*?.backup\./', basename($path)))
-            ->map(fn($path) => basename($path));
+        $allEnvFilePaths = collect(File::glob(base_path('.env*')))
+            ->reject(fn($path) => Str::match('/^\.env.*?.backup\./', basename($path)));
 
+        $additionalEnvFiles = $allEnvFilePaths
+            ->map(fn($path) => basename($path))
+            ->reject(fn($path) => in_array($path, ['.env', '.env.example']));
         $additionalEnvCount = $additionalEnvFiles->count();
 
         if ($additionalEnvCount > 0) {
@@ -86,6 +90,9 @@ final class SyncExampleToEnvsCommand extends Command
 
     private function processEnvFile(string $targetPath, array $sourceData): void
     {
+        $this->newline();
+        $this->info('Processing file: ' . basename($targetPath));
+
         if (!$this->option('no-backup')) {
             $backupPath = $targetPath . '.backup.' . now()->format('Y-m-d_H-i-s');
 
@@ -95,8 +102,7 @@ final class SyncExampleToEnvsCommand extends Command
         }
 
         $targetData = $this->parseEnvFile($targetPath);
-        $targetKeyValue = collect($targetData)->keyBy('key')->all();
-        $warnings = 0;
+        $targetKeyValue = collect($targetData)->keyBy('key');
         $targetContent = [];
 
         foreach ($sourceData as $lineNumber => $data) {
@@ -108,47 +114,61 @@ final class SyncExampleToEnvsCommand extends Command
 
             if ($data['is_comment']) {
                 if (!isset($targetData[$lineNumber]) || $targetData[$lineNumber]['raw'] !== $data['raw']) {
-                    $this->warn(
-                        "Comment differs at line {$lineNumber}:\n"
-                            . "Source: {$data['raw']}\n"
-                            . 'Target: ' . ($targetData[$lineNumber]['raw'] ?? 'N/A')
-                    );
+                    $this->warn(sprintf(
+                        <<<'STR'
+                            Comment differs at line %d:
+                                Source: %s
+                                Target: %s
+                            STR,
+                        $lineNumber,
+                        $data['raw'],
+                        $targetData[$lineNumber]['raw'] ?? 'N/A'
+                    ));
                 }
 
                 $targetContent[] = $data['raw'];
-
-                $warnings++;
 
                 continue;
             }
 
             $key = $data['key'];
-            $value = ($targetKeyValue[$data['key']]['value'] ?? null) ?? $data['value'];
+            $value = ($targetKeyValue[$key]['value'] ?? null) ?? $data['value'];
 
-            if (!isset($targetData[$lineNumber]) || $targetData[$lineNumber]['key'] !== $data['key']) {
-                $this->warn(
-                    "Key differs at line {$lineNumber}:\n"
-                        . "Source: {$data['key']}={$data['value']}\n"
-                        . 'Target: ' . ($targetData[$lineNumber]['key'] ?? 'N/A')
-                );
-
-                ++$warnings;
+            if (!isset($targetData[$lineNumber]) || $targetData[$lineNumber]['key'] !== $key) {
+                $this->warn(sprintf(
+                    <<<'STR'
+                        Key differs at line %d:
+                            Source: %s=%s
+                            Target: %s
+                        STR,
+                    $lineNumber,
+                    $key,
+                    $data['value'],
+                    $targetData[$lineNumber]['key'] ?? 'N/A'
+                ));
             }
+
+            unset($targetKeyValue[$data['key']]);
 
             $targetContent[] = "{$key}={$value}";
         }
 
+        $targetKeyValue = $targetKeyValue->reject(fn($item, $key) => $key === '');
+
+        if ($targetKeyValue->isNotEmpty()) {
+            $this->warn('Additional keys found in target file that are not present in source file: ' . $targetKeyValue->keys()->implode(', '));
+        }
+
+
         File::put($targetPath, implode("\n", $targetContent));
     }
-
     private function parseEnvFile(string $path): array
     {
         $content = File::get($path);
-
         $lines = preg_split("/(\r\n|\n|\r)/", $content);
 
         if ($lines === false) {
-            return [];
+            return []; // @codeCoverageIgnore
         }
 
         $lineNumber = 1;
@@ -213,10 +233,6 @@ final class SyncExampleToEnvsCommand extends Command
                 continue;
             }
 
-            if ($entry['key'] === null) {
-                continue;
-            }
-
             $key = $entry['key'];
 
             if (isset($keys[$key])) {
@@ -238,14 +254,10 @@ final class SyncExampleToEnvsCommand extends Command
                 continue;
             }
 
-            if ($entry['value'] === null) {
-                continue;
-            }
-
             $value = $entry['value'];
 
             if (Str::startsWith($value, ' ') || Str::endsWith($value, ' ')) {
-                throw new Exception("Invalid value  found in line {$lineNumber}: {$value}. Error: Leading or trailing spaces are not allowed.");
+                throw new Exception("Invalid value found in line {$lineNumber}: {$value}. Error: Leading or trailing spaces are not allowed.");
             }
 
             try {
