@@ -7,9 +7,9 @@ namespace Mahbub\SyncEnv\Commands;
 use Dotenv\Dotenv;
 use Exception;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\App;
 
 final class SyncExampleToEnvsCommand extends Command
 {
@@ -46,23 +46,23 @@ final class SyncExampleToEnvsCommand extends Command
         $baseEnvPath = base_path('.env');
 
         if (!File::exists($exampleEnvPath)) {
-            throw new Exception("The .env.example file does not exist in: " . base_path());
+            throw new Exception('The .env.example file does not exist in: ' . base_path());
         }
 
         if (!File::exists($baseEnvPath)) {
-            $this->info("The .env file does not exist in: " . base_path());
+            $this->info('The .env file does not exist in: ' . base_path());
 
             File::put($baseEnvPath, '');
 
-            $this->info("Created empty .env file in: " . base_path());
+            $this->info('Created empty .env file in: ' . base_path());
         }
 
         $allEnvFilePaths = collect(File::glob(base_path('.env*')))
-            ->reject(fn($path) => Str::match('/^\.env.*?.backup\./', basename($path)));
+            ->reject(fn ($path) => Str::match('/^\.env.*?.backup\./', basename($path)));
 
         $additionalEnvFiles = $allEnvFilePaths
-            ->map(fn($path) => basename($path))
-            ->reject(fn($path) => in_array($path, ['.env', '.env.example']));
+            ->map(fn ($path) => basename($path))
+            ->reject(fn ($path) => in_array($path, ['.env', '.env.example']));
         $additionalEnvCount = $additionalEnvFiles->count();
 
         if ($additionalEnvCount > 0) {
@@ -82,7 +82,7 @@ final class SyncExampleToEnvsCommand extends Command
         $this->checkForDuplicateKeys($sourceData);
         $this->checkForInvalidValues($sourceData);
 
-        $envFilesPathsToProcess = collect($allEnvFilePaths)->reject(fn($path) => $path === $exampleEnvPath);
+        $envFilesPathsToProcess = collect($allEnvFilePaths)->reject(fn ($path) => $path === $exampleEnvPath);
 
         foreach ($envFilesPathsToProcess as $envFilePath) {
             $this->processEnvFile($envFilePath, $sourceData);
@@ -110,8 +110,6 @@ final class SyncExampleToEnvsCommand extends Command
                         basename($targetPath)
                     )
                 );
-            } else {
-                $this->info('No backup files found to delete.');
             }
         }
 
@@ -175,7 +173,7 @@ final class SyncExampleToEnvsCommand extends Command
             $targetContent[] = "{$key}={$value}";
         }
 
-        $targetKeyValue = $targetKeyValue->reject(fn($item, $key) => $key === '');
+        $targetKeyValue = $targetKeyValue->reject(fn ($item, $key) => $key === '');
 
         if ($targetKeyValue->isNotEmpty()) {
             $this->warn('Additional keys found in target file that are not present in source file: ' . $targetKeyValue->keys()->implode(', '));
@@ -183,6 +181,7 @@ final class SyncExampleToEnvsCommand extends Command
 
         File::put($targetPath, implode("\n", $targetContent));
     }
+
     private function parseEnvFile(string $path): array
     {
         $content = File::get($path);
@@ -212,7 +211,7 @@ final class SyncExampleToEnvsCommand extends Command
                 'is_empty' => $line === '',
             ];
 
-            ++$lineNumber;
+            $lineNumber++;
         }
 
         return $lineData;

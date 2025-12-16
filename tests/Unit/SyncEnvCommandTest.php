@@ -365,6 +365,7 @@ it('creates a backup of the target file before syncing', function (): void {
     expect(File::exists($backupPath))->toBeFalse();
 
     artisan('sync-env:example-to-envs')
+        ->expectsOutputToContain("Backup created: {$backupPath}")
         ->assertExitCode(0);
 
     expect(File::exists($backupPath))->toBeTrue();
