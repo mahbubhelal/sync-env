@@ -371,6 +371,51 @@ it('creates a backup of the target file before syncing', function (): void {
     expect(File::get($backupPath))->toBe($targetContent);
 });
 
+it('does not create a backup of the target file before syncing if --no-backup option is used', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        ENV;
+
+    $targetContent = <<<'ENV'
+        APP_VERSION=1.0
+        APP_NAME=OldApp
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $targetContent);
+    $backupPath = base_path('.env.backup.' . now()->format('Y-m-d_H-i-s'));
+
+    expect(File::exists($backupPath))->toBeFalse();
+
+    artisan('sync-env:example-to-envs --no-backup')
+        ->assertExitCode(0);
+
+    expect(File::exists($backupPath))->toBeFalse();
+});
+
+it('removes previous backups if --remove-backups option is used', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        ENV;
+
+    $targetContent = <<<'ENV'
+        APP_VERSION=1.0
+        APP_NAME=OldApp
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $targetContent);
+    $backupPath = base_path('.env.backup.' . now()->format('Y-m-d_H-i-s'));
+    File::put($backupPath, $targetContent);
+
+    expect(File::exists($backupPath))->toBeTrue();
+
+    artisan('sync-env:example-to-envs --remove-backups --no-backup')
+        ->assertExitCode(0);
+
+    expect(File::exists($backupPath))->toBeFalse();
+});
+
 it('preserves comments and empty lines', function (): void {
     $sourceContent = <<<'ENV'
         # Application Configuration

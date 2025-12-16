@@ -14,7 +14,8 @@ use Illuminate\Support\Facades\App;
 final class SyncExampleToEnvsCommand extends Command
 {
     protected $signature = 'sync-env:example-to-envs
-                            {--no-backup : Do not create a backup of the target .env file before syncing}';
+                            {--N|no-backup : Do not create a backup of the target .env file before syncing}
+                            {--r|remove-backups : Remove previously created backup files}';
 
     protected $description = 'Sync environment keys from one the .env.example file to other .env files, preserving existing values in the target files.';
 
@@ -93,6 +94,27 @@ final class SyncExampleToEnvsCommand extends Command
         $this->newline();
         $this->info('Processing file: ' . basename($targetPath));
 
+        if ($this->option('remove-backups')) {
+            $backupFiles = collect(File::glob($targetPath . '.backup.*'));
+
+            if ($backupFiles->isNotEmpty()) {
+                foreach ($backupFiles as $backupFile) {
+                    File::delete($backupFile);
+                }
+
+                $this->info(
+                    sprintf(
+                        'Deleted %d backup %s for %s.',
+                        $backupFiles->count(),
+                        Str::plural('file', $backupFiles->count()),
+                        basename($targetPath)
+                    )
+                );
+            } else {
+                $this->info('No backup files found to delete.');
+            }
+        }
+
         if (!$this->option('no-backup')) {
             $backupPath = $targetPath . '.backup.' . now()->format('Y-m-d_H-i-s');
 
@@ -158,7 +180,6 @@ final class SyncExampleToEnvsCommand extends Command
         if ($targetKeyValue->isNotEmpty()) {
             $this->warn('Additional keys found in target file that are not present in source file: ' . $targetKeyValue->keys()->implode(', '));
         }
-
 
         File::put($targetPath, implode("\n", $targetContent));
     }
