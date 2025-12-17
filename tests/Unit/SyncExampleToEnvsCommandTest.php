@@ -444,19 +444,6 @@ it('preserves comments and empty lines', function (): void {
     expect($result)->toBe($sourceContent);
 });
 
-it('outputs message when no additional .env.* files are found', function (): void {
-    $sourceContent = <<<'ENV'
-        APP_NAME=TestApp
-        ENV;
-
-    File::put(base_path('.env.example'), $sourceContent);
-    File::put(base_path('.env'), $sourceContent);
-
-    artisan('sync-env:example-to-envs')
-        ->expectsOutputToContain('No additional .env.* files found to sync.')
-        ->assertExitCode(0);
-});
-
 it('outputs message when additional .env.* files are found', function (): void {
     $sourceContent = <<<'ENV'
         APP_NAME=TestApp

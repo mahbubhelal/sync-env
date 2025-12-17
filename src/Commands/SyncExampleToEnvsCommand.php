@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
+/**
+ * @phpstan-type envLineData array{line_number: int, key: ?string, value: ?string, raw: string, is_comment: bool, is_empty: bool}
+ */
 final class SyncExampleToEnvsCommand extends Command
 {
     protected $signature = 'sync-env:example-to-envs
@@ -24,13 +27,12 @@ final class SyncExampleToEnvsCommand extends Command
         try {
             $this->process();
 
-            $this->newline();
+            $this->newLine();
             $this->info('Environment files synchronized successfully.');
 
             return 0;
         } catch (Exception $e) {
             $this->error('An error occurred: ' . $e->getMessage());
-            // dd($e->getMessage());
 
             return 1;
         }
@@ -38,8 +40,8 @@ final class SyncExampleToEnvsCommand extends Command
 
     public function process(): void
     {
-        if (App::environment() === 'workbench') {
-            App::setBasePath(getcwd()); // @codeCoverageIgnore
+        if (App::environment('workbench')) {
+            App::setBasePath((string) getcwd()); // @codeCoverageIgnore
         }
 
         $exampleEnvPath = base_path('.env.example');
@@ -57,12 +59,13 @@ final class SyncExampleToEnvsCommand extends Command
             $this->info('Created empty .env file in: ' . base_path());
         }
 
-        $allEnvFilePaths = collect(File::glob(base_path('.env*')))
-            ->reject(fn ($path) => Str::match('/^\.env.*?.backup\./', basename($path)));
+        /** @var \Illuminate\Support\Collection<int, string> */
+        $allEnvFilePaths = collect(File::glob(base_path('.env*')));
+        $allEnvFilePaths = $allEnvFilePaths->reject(fn ($path): bool => (bool) Str::match('/^\.env.*?.backup\./', basename($path)));
 
         $additionalEnvFiles = $allEnvFilePaths
-            ->map(fn ($path) => basename($path))
-            ->reject(fn ($path) => in_array($path, ['.env', '.env.example']));
+            ->map(fn ($path): string => basename($path))
+            ->reject(fn ($path): bool => in_array($path, ['.env', '.env.example'], true));
         $additionalEnvCount = $additionalEnvFiles->count();
 
         if ($additionalEnvCount > 0) {
@@ -72,8 +75,6 @@ final class SyncExampleToEnvsCommand extends Command
                 Str::plural('file', $additionalEnvCount),
                 $additionalEnvFiles->implode(', ')
             ));
-        } else {
-            $this->info('No additional .env.* files found to sync.');
         }
 
         $sourceData = $this->parseEnvFile($exampleEnvPath);
@@ -82,19 +83,23 @@ final class SyncExampleToEnvsCommand extends Command
         $this->checkForDuplicateKeys($sourceData);
         $this->checkForInvalidValues($sourceData);
 
-        $envFilesPathsToProcess = collect($allEnvFilePaths)->reject(fn ($path) => $path === $exampleEnvPath);
+        $envFilesPathsToProcess = $allEnvFilePaths->reject(fn ($path): bool => $path === $exampleEnvPath);
 
         foreach ($envFilesPathsToProcess as $envFilePath) {
             $this->processEnvFile($envFilePath, $sourceData);
         }
     }
 
+    /**
+     * @param  envLineData[]  $sourceData
+     */
     private function processEnvFile(string $targetPath, array $sourceData): void
     {
-        $this->newline();
+        $this->newLine();
         $this->info('Processing file: ' . basename($targetPath));
 
         if ($this->option('remove-backups')) {
+            /** @var \Illuminate\Support\Collection<int, string> */
             $backupFiles = collect(File::glob($targetPath . '.backup.*'));
 
             if ($backupFiles->isNotEmpty()) {
@@ -104,7 +109,7 @@ final class SyncExampleToEnvsCommand extends Command
 
                 $this->info(
                     sprintf(
-                        'Deleted %d backup %s for %s.',
+                        'Deleted %d backup %s for %s',
                         $backupFiles->count(),
                         Str::plural('file', $backupFiles->count()),
                         basename($targetPath)
@@ -173,7 +178,7 @@ final class SyncExampleToEnvsCommand extends Command
             $targetContent[] = "{$key}={$value}";
         }
 
-        $targetKeyValue = $targetKeyValue->reject(fn ($item, $key) => $key === '');
+        $targetKeyValue = $targetKeyValue->reject(fn ($item, $key): bool => $key === '');
 
         if ($targetKeyValue->isNotEmpty()) {
             $this->warn('Additional keys found in target file that are not present in source file: ' . $targetKeyValue->keys()->implode(', '));
@@ -182,6 +187,9 @@ final class SyncExampleToEnvsCommand extends Command
         File::put($targetPath, implode("\n", $targetContent));
     }
 
+    /**
+     * @return envLineData[]
+     */
     private function parseEnvFile(string $path): array
     {
         $content = File::get($path);
@@ -217,6 +225,9 @@ final class SyncExampleToEnvsCommand extends Command
         return $lineData;
     }
 
+    /**
+     * @param  envLineData[]  $data
+     */
     private function checkForInvalidKeys(array $data): void
     {
         foreach ($data as $lineNumber => $entry) {
@@ -228,18 +239,21 @@ final class SyncExampleToEnvsCommand extends Command
                 continue;
             }
 
-            $key = $entry['key'];
+            $key = (string) $entry['key'];
 
             if (Str::startsWith($key, ' ') || Str::endsWith($key, ' ')) {
                 throw new Exception("Invalid key found in line {$lineNumber}: {$key}. Leading or trailing spaces are not allowed.");
             }
 
-            if ($key === null || preg_match('/^[A-Z][A-Z0-9_]+$/', $key) !== 1) {
+            if ($key === '' || preg_match('/^[A-Z][A-Z0-9_]+$/', $key) !== 1) {
                 throw new Exception("Invalid key found in line {$lineNumber}: {$key}. Keys must start with an uppercase letter and contain only uppercase letters, numbers, and underscores.");
             }
         }
     }
 
+    /**
+     * @param  envLineData[]  $data
+     */
     private function checkForDuplicateKeys(array $data): void
     {
         $keys = [];
@@ -253,7 +267,7 @@ final class SyncExampleToEnvsCommand extends Command
                 continue;
             }
 
-            $key = $entry['key'];
+            $key = (string) $entry['key'];
 
             if (isset($keys[$key])) {
                 throw new Exception("Duplicate key found in line {$keys[$key]} and {$lineNumber}: {$key}");
@@ -263,6 +277,9 @@ final class SyncExampleToEnvsCommand extends Command
         }
     }
 
+    /**
+     * @param  envLineData[]  $data
+     */
     private function checkForInvalidValues(array $data): void
     {
         foreach ($data as $lineNumber => $entry) {
@@ -274,7 +291,7 @@ final class SyncExampleToEnvsCommand extends Command
                 continue;
             }
 
-            $value = $entry['value'];
+            $value = (string) $entry['value'];
 
             if (Str::startsWith($value, ' ') || Str::endsWith($value, ' ')) {
                 throw new Exception("Invalid value found in line {$lineNumber}: {$value}. Error: Leading or trailing spaces are not allowed.");

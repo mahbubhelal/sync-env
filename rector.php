@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use Rector\CodingStyle\Rector\PostInc\PostIncDecToPreIncDecRector;
 use Rector\Config\RectorConfig;
+use Rector\Php73\Rector\String_\SensitiveHereNowDocRector;
 use Rector\Set\ValueObject\LevelSetList;
 use Rector\Set\ValueObject\SetList;
 use RectorLaravel\Set\LaravelLevelSetList;
@@ -15,6 +17,8 @@ return RectorConfig::configure()
     ])
     ->withSkip([
         __DIR__ . '/bootstrap/cache',
+        SensitiveHereNowDocRector::class,
+        PostIncDecToPreIncDecRector::class,
     ])
     ->withSets([
         LevelSetList::UP_TO_PHP_85,
