@@ -1,58 +1,10 @@
 services:
-  local:
-    build:
-      context: .
-      args:
-        BUILD_ENV: local
-        OPCACHE_ENABLE: 0
-        HOST_UID: ${UID:-1000}
-        HOST_GID: ${GID:-1000}
-    volumes:
-      - .:/var/www/app
-      - ./docker/custom.ini:/usr/local/etc/php/conf.d/custom.ini:ro
-    ports:
-      - ${PORT:-81}:80
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  staging:
-    build:
-      context: .
-      args:
-        BUILD_ENV: staging
-        OPCACHE_ENABLE: 0
-    ports:
-      - ${PORT:-81}:80
-
-  production:
-    build:
-      context: .
-      args:
-        BUILD_ENV: production
-    ports:
-      - ${PORT:-81}:80
-
-  mysql:
-    image: mysql:8.0
-    volumes:
-      - data:/var/lib/mysql
-    environment:
-      - MYSQL_ALLOW_EMPTY_PASSWORD=yes
-      - MYSQL_DATABASE=laravel
-    ports:
-      - 3306:3306
-
-  redis:
-    image: redis:6.2-alpine3.19
-
-  test-mysql:
-    image: mysql:8.0
-    environment:
-      - MYSQL_ALLOW_EMPTY_PASSWORD=yes
-      - MYSQL_DATABASE=laravel
-    ports:
-      - 13306:3306
-
-volumes:
-  data:
-    driver: local
+    local:
+        container_name: sync-env_local
+        build:
+            context: .
+            args:
+                HOST_UID: ${UID:-1000}
+                HOST_GID: ${GID:-1000}
+        volumes:
+            - .:/var/www/app

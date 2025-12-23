@@ -57,7 +57,7 @@
         "format": "./vendor/bin/pint",
         "refactor": "./vendor/bin/rector",
         "types": "./vendor/bin/phpstan",
-        "test": "./vendor/bin/pest",
+        "test": "docker exec -it sync-env_local ./vendor/bin/pest --bail",
         "all": [
             "@refactor",
             "@format",
@@ -68,7 +68,7 @@
             "./vendor/bin/pint --test",
             "./vendor/bin/rector --dry-run",
             "./vendor/bin/phpstan",
-            "./vendor/bin/pest --coverage --exactly=100"
+            "docker exec -it sync-env_local ./vendor/bin/pest --bail --coverage --exactly=100"
         ]
     }
 }

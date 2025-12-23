@@ -1,24 +1,18 @@
-.PHONY: up build down destory downall attach logs exec composer php artisan tinker testing reup buildup ua ra ba a
+.PHONY: up build down attach logs exec composer php artisan tinker reup buildup ua ra ba a version
 
 s ?= local
-p ?= 80
+p ?= 81
 uid ?= $(shell id -u)
 gid ?= $(shell id -g)
 
 up:
-	@export PORT=$(p) UID=$(uid) GID=$(gid); docker compose up -d $(s)
+	@export PORT=$(p) HOST_UID=$(uid) HOST_GID=$(gid); docker compose up -d $(s)
 
 build:
-	@export UID=$(uid) GID=$(gid); docker compose build $(s)
+	@export HOST_UID=$(uid) HOST_GID=$(gid); docker compose build $(s)
 
 down:
 	@docker compose rm -fvs $(s)
-
-destory:
-	@docker compose down --rmi local $(s)
-
-downall:
-	@docker compose down
 
 attach:
 	@docker compose exec $(s) /bin/sh
@@ -52,3 +46,5 @@ ra: reup attach
 ba: buildup attach
 
 a: attach
+
+version: php
