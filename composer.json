@@ -1,5 +1,5 @@
 {
-    "name": "mahbubhelal/sync-env",
+    "name": "mdmahbubhelal/sync-env",
     "description": "A laravel package to sync env variables between different .env files.",
     "type": "library",
     "version": "1.0",
