@@ -155,6 +155,7 @@ it('fails when invalid keys are present in source', function (): void {
         ->expectsOutputToContain('Invalid key found in line 1: APP NAME. Keys must start with an uppercase letter and contain only uppercase letters, numbers, and underscores.')
         ->assertExitCode(1);
 
+    // Leading space
     $sourceContent = <<<'ENV'
          APPNAME=TestApp
         ENV;

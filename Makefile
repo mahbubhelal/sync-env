@@ -30,10 +30,10 @@ php:
 	@docker compose exec $(s) php $(if $(c),$(c),--version)
 
 artisan:
-	@docker compose exec $(s) php artisan $(c)
+	@docker compose exec $(s) ./vendor/bin/testbench $(if $(c),$(c),--version)
 
 tinker:
-	@docker compose exec $(s) php artisan tinker
+	@docker compose exec $(s) php ./vendor/bin/testbench tinker
 
 reup: down up
 
@@ -47,4 +47,4 @@ ba: buildup attach
 
 a: attach
 
-version: php
+version: artisan php
