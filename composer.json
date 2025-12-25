@@ -53,7 +53,9 @@
             "pestphp/pest-plugin": true
         }
     },
-        "scripts": {
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "scripts": {
         "format": "./vendor/bin/pint",
         "refactor": "./vendor/bin/rector",
         "types": "./vendor/bin/phpstan",
