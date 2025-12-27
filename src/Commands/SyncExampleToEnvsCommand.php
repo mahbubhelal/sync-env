@@ -77,7 +77,7 @@ final class SyncExampleToEnvsCommand extends Command
             ));
         }
 
-        $sourceData = $this->parseEnvFile($exampleEnvPath);
+        $sourceData = $this->parseEnvFile($exampleEnvPath, true);
 
         $this->checkForInvalidKeys($sourceData);
         $this->checkForDuplicateKeys($sourceData);
@@ -98,7 +98,7 @@ final class SyncExampleToEnvsCommand extends Command
         $this->newLine();
         $this->info('Processing file: ' . basename($targetPath));
 
-        if ($this->option('remove-backups')) {
+        if ($this->option('remove-backups') === true) {
             /** @var \Illuminate\Support\Collection<int, string> */
             $backupFiles = collect(File::glob($targetPath . '.backup.*'));
 
@@ -118,7 +118,7 @@ final class SyncExampleToEnvsCommand extends Command
             }
         }
 
-        if (!$this->option('no-backup')) {
+        if ($this->option('no-backup') !== true) {
             $backupPath = $targetPath . '.backup.' . now()->format('Y-m-d_H-i-s');
 
             File::copy($targetPath, $backupPath);
@@ -190,7 +190,7 @@ final class SyncExampleToEnvsCommand extends Command
     /**
      * @return envLineData[]
      */
-    private function parseEnvFile(string $path): array
+    private function parseEnvFile(string $path, bool $checkForLeadingTrailingSpaces = false): array
     {
         $content = File::get($path);
         $lines = preg_split("/(\r\n|\n|\r)/", $content);
@@ -203,10 +203,15 @@ final class SyncExampleToEnvsCommand extends Command
         $lineData = [];
 
         foreach ($lines as $line) {
+            if ($checkForLeadingTrailingSpaces && (Str::startsWith($line, ' ') || Str::endsWith($line, ' '))) {
+                throw new Exception("Invalid entry found in line {$lineNumber}: {$line}. Leading or trailing spaces are not allowed.");
+            }
+
             $key = null;
             $value = null;
+            $isComment = str_starts_with(trim($line), '#');
 
-            if (str_contains($line, '=')) {
+            if (!$isComment && str_contains($line, '=')) {
                 [$key, $value] = explode('=', $line, 2);
             }
 
@@ -215,7 +220,7 @@ final class SyncExampleToEnvsCommand extends Command
                 'key' => $key,
                 'value' => $value,
                 'raw' => $line,
-                'is_comment' => str_starts_with($line, '#'),
+                'is_comment' => $isComment,
                 'is_empty' => $line === '',
             ];
 
@@ -240,10 +245,6 @@ final class SyncExampleToEnvsCommand extends Command
             }
 
             $key = (string) $entry['key'];
-
-            if (Str::startsWith($key, ' ') || Str::endsWith($key, ' ')) {
-                throw new Exception("Invalid key found in line {$lineNumber}: {$key}. Leading or trailing spaces are not allowed.");
-            }
 
             if ($key === '' || preg_match('/^[A-Z][A-Z0-9_]+$/', $key) !== 1) {
                 throw new Exception("Invalid key found in line {$lineNumber}: {$key}. Keys must start with an uppercase letter and contain only uppercase letters, numbers, and underscores.");

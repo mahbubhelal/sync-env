@@ -144,6 +144,24 @@ it('creates target file if it does not exist', function (): void {
     expect(File::get($targetPath))->toContain($sourceContent);
 });
 
+it('fails when a line begins or ends with a space', function (): void {
+    $sourceContent = ' INVALID_LEADING_SPACE=';
+
+    File::put(base_path('.env.example'), $sourceContent);
+
+    artisan('sync-env:example-to-envs')
+        ->expectsOutputToContain('Invalid entry found in line 1:  INVALID_LEADING_SPACE=. Leading or trailing spaces are not allowed.')
+        ->assertExitCode(1);
+
+    $sourceContent = 'INVALID_TRAILING_SPACE= ';
+
+    File::put(base_path('.env.example'), $sourceContent);
+
+    artisan('sync-env:example-to-envs')
+        ->expectsOutputToContain('Invalid entry found in line 1: INVALID_TRAILING_SPACE= . Leading or trailing spaces are not allowed.')
+        ->assertExitCode(1);
+});
+
 it('fails when invalid keys are present in source', function (): void {
     $sourceContent = <<<'ENV'
         APP NAME=TestApp
@@ -153,17 +171,6 @@ it('fails when invalid keys are present in source', function (): void {
 
     artisan('sync-env:example-to-envs')
         ->expectsOutputToContain('Invalid key found in line 1: APP NAME. Keys must start with an uppercase letter and contain only uppercase letters, numbers, and underscores.')
-        ->assertExitCode(1);
-
-    // Leading space
-    $sourceContent = <<<'ENV'
-         APPNAME=TestApp
-        ENV;
-
-    File::put(base_path('.env.example'), $sourceContent);
-
-    artisan('sync-env:example-to-envs')
-        ->expectsOutputToContain('Invalid key found in line 1:  APPNAME. Leading or trailing spaces are not allowed')
         ->assertExitCode(1);
 
     $sourceContent = <<<'ENV'
