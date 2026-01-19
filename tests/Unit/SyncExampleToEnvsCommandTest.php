@@ -471,7 +471,7 @@ it('outputs message when additional .env.* files are found', function (): void {
         ->assertExitCode(0);
 });
 
-it('outputs warning for comment and key differences', function (): void {
+it('outputs warning for comment and key differences with verbose flag', function (): void {
     $sourceContent = <<<'ENV'
         # Comment 1
         APP_NAME=TestApp
@@ -482,7 +482,7 @@ it('outputs warning for comment and key differences', function (): void {
     File::put(base_path('.env.example'), $sourceContent);
     File::put(base_path('.env'), $targetContent);
 
-    artisan('sync-env:example-to-envs')
+    artisan('sync-env:example-to-envs -v')
         ->expectsOutputToContain(<<<'STR'
             Comment differs at line 1:
                 Source: # Comment 1
@@ -496,7 +496,41 @@ it('outputs warning for comment and key differences', function (): void {
         ->assertExitCode(0);
 });
 
-it('outputs warning for additional keys in target', function (): void {
+it('does not output warning for comment and key differences without verbose flag', function (): void {
+    $sourceContent = <<<'ENV'
+        # Comment 1
+        APP_NAME=TestApp
+        ENV;
+    $targetContent = <<<'ENV'
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $targetContent);
+
+    artisan('sync-env:example-to-envs')
+        ->doesntExpectOutputToContain('Comment differs at line')
+        ->doesntExpectOutputToContain('Key differs at line')
+        ->assertExitCode(0);
+});
+
+it('outputs warning for additional keys in target with verbose flag', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        ENV;
+    $targetContent = <<<'ENV'
+        APP_NAME=TestApp
+        EXTRA_KEY=extra
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $targetContent);
+
+    artisan('sync-env:example-to-envs -v')
+        ->expectsOutputToContain('Additional keys found in target file that are not present in source file: EXTRA_KEY')
+        ->assertExitCode(0);
+});
+
+it('does not output warning for additional keys in target without verbose flag', function (): void {
     $sourceContent = <<<'ENV'
         APP_NAME=TestApp
         ENV;
@@ -509,6 +543,6 @@ it('outputs warning for additional keys in target', function (): void {
     File::put(base_path('.env'), $targetContent);
 
     artisan('sync-env:example-to-envs')
-        ->expectsOutputToContain('Additional keys found in target file that are not present in source file: EXTRA_KEY')
+        ->doesntExpectOutputToContain('Additional keys found in target file')
         ->assertExitCode(0);
 });

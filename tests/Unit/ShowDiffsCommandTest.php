@@ -395,3 +395,215 @@ it('fails when invalid values are present in source', function ($line, $exitCode
         1,
     ],
 ]);
+
+it('can filter env files with --only option', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        APP_ENV=local
+        ENV;
+
+    $envContent = <<<'ENV'
+        APP_NAME=ProdApp
+        APP_ENV=production
+        ENV;
+
+    $stagingContent = <<<'ENV'
+        APP_NAME=StagingApp
+        APP_ENV=staging
+        ENV;
+
+    $testingContent = <<<'ENV'
+        APP_NAME=TestingApp
+        APP_ENV=testing
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $envContent);
+    File::put(base_path('.env.staging'), $stagingContent);
+    File::put(base_path('.env.testing'), $testingContent);
+
+    artisan('sync-env:show-diffs --only=.env.example,.env,.env.staging')
+        ->expectsTable(
+            ['Key', '.env.example Value', '.env Value', '.env.staging Value'],
+            [
+                ['APP_NAME', 'TestApp', 'ProdApp', 'StagingApp'],
+                ['APP_ENV', 'local', 'production', 'staging'],
+            ],
+        );
+});
+
+it('includes .env.example by default when --only results in less than 2 files', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        APP_ENV=local
+        ENV;
+
+    $envContent = <<<'ENV'
+        APP_NAME=ProdApp
+        APP_ENV=production
+        ENV;
+
+    $stagingContent = <<<'ENV'
+        APP_NAME=StagingApp
+        APP_ENV=staging
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $envContent);
+    File::put(base_path('.env.staging'), $stagingContent);
+
+    artisan('sync-env:show-diffs --only=.env')
+        ->expectsTable(
+            ['Key', '.env.example Value', '.env Value'],
+            [
+                ['APP_NAME', 'TestApp', 'ProdApp'],
+                ['APP_ENV', 'local', 'production'],
+            ],
+        );
+});
+
+it('does not include .env.example when --only has 2+ files', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        APP_ENV=local
+        ENV;
+
+    $envContent = <<<'ENV'
+        APP_NAME=ProdApp
+        APP_ENV=production
+        ENV;
+
+    $stagingContent = <<<'ENV'
+        APP_NAME=StagingApp
+        APP_ENV=staging
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $envContent);
+    File::put(base_path('.env.staging'), $stagingContent);
+
+    artisan('sync-env:show-diffs --only=.env,.env.staging')
+        ->expectsTable(
+            ['Key', '.env Value', '.env.staging Value'],
+            [
+                ['APP_NAME', 'ProdApp', 'StagingApp'],
+                ['APP_ENV', 'production', 'staging'],
+            ],
+        );
+});
+
+it('can exclude env files with --exclude option', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        APP_ENV=local
+        ENV;
+
+    $envContent = <<<'ENV'
+        APP_NAME=ProdApp
+        APP_ENV=production
+        ENV;
+
+    $stagingContent = <<<'ENV'
+        APP_NAME=StagingApp
+        APP_ENV=staging
+        ENV;
+
+    $testingContent = <<<'ENV'
+        APP_NAME=TestingApp
+        APP_ENV=testing
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $envContent);
+    File::put(base_path('.env.staging'), $stagingContent);
+    File::put(base_path('.env.testing'), $testingContent);
+
+    artisan('sync-env:show-diffs --exclude=.env.testing')
+        ->expectsTable(
+            ['Key', '.env.example Value', '.env Value', '.env.staging Value'],
+            [
+                ['APP_NAME', 'TestApp', 'ProdApp', 'StagingApp'],
+                ['APP_ENV', 'local', 'production', 'staging'],
+            ],
+        );
+});
+
+it('can exclude .env.example with --exclude option if 2+ files remain', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        APP_ENV=local
+        ENV;
+
+    $envContent = <<<'ENV'
+        APP_NAME=ProdApp
+        APP_ENV=production
+        ENV;
+
+    $stagingContent = <<<'ENV'
+        APP_NAME=StagingApp
+        APP_ENV=staging
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $envContent);
+    File::put(base_path('.env.staging'), $stagingContent);
+
+    artisan('sync-env:show-diffs --exclude=.env.example')
+        ->expectsTable(
+            ['Key', '.env Value', '.env.staging Value'],
+            [
+                ['APP_NAME', 'ProdApp', 'StagingApp'],
+                ['APP_ENV', 'production', 'staging'],
+            ],
+        );
+});
+
+it('includes .env.example by default when --exclude results in less than 2 files', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        APP_ENV=local
+        ENV;
+
+    $envContent = <<<'ENV'
+        APP_NAME=ProdApp
+        APP_ENV=production
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $envContent);
+
+    artisan('sync-env:show-diffs --exclude=.env.example')
+        ->expectsTable(
+            ['Key', '.env.example Value', '.env Value'],
+            [
+                ['APP_NAME', 'TestApp', 'ProdApp'],
+                ['APP_ENV', 'local', 'production'],
+            ],
+        );
+});
+
+it('fails when less than 2 env files are selected with --only', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $sourceContent);
+
+    artisan('sync-env:show-diffs --only=.env.nonexistent')
+        ->expectsOutputToContain('At least 2 env files are required to show differences.')
+        ->assertExitCode(1);
+});
+
+it('fails when less than 2 env files are selected with --exclude', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $sourceContent);
+
+    artisan('sync-env:show-diffs --exclude=.env')
+        ->expectsOutputToContain('At least 2 env files are required to show differences.')
+        ->assertExitCode(1);
+});

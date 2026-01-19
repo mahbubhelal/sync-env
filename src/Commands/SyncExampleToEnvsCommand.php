@@ -138,7 +138,7 @@ final class SyncExampleToEnvsCommand extends Command
             }
 
             if ($data['is_comment']) {
-                if (!isset($targetData[$lineNumber]) || $targetData[$lineNumber]['raw'] !== $data['raw']) {
+                if ($this->output->isVerbose() && (!isset($targetData[$lineNumber]) || $targetData[$lineNumber]['raw'] !== $data['raw'])) {
                     $this->warn(sprintf(
                         <<<'STR'
                             Comment differs at line %d:
@@ -159,7 +159,7 @@ final class SyncExampleToEnvsCommand extends Command
             $key = $data['key'];
             $value = ($targetKeyValue[$key]['value'] ?? null) ?? $data['value'];
 
-            if (!isset($targetData[$lineNumber]) || $targetData[$lineNumber]['key'] !== $key) {
+            if ($this->output->isVerbose() && (!isset($targetData[$lineNumber]) || $targetData[$lineNumber]['key'] !== $key)) {
                 $this->warn(sprintf(
                     <<<'STR'
                         Key differs at line %d:
@@ -180,7 +180,7 @@ final class SyncExampleToEnvsCommand extends Command
 
         $targetKeyValue = $targetKeyValue->reject(fn ($item, $key): bool => $key === '');
 
-        if ($targetKeyValue->isNotEmpty()) {
+        if ($this->output->isVerbose() && $targetKeyValue->isNotEmpty()) {
             $this->warn('Additional keys found in target file that are not present in source file: ' . $targetKeyValue->keys()->implode(', '));
         }
 

@@ -18,7 +18,9 @@ final class ShowDiffsCommand extends Command
 {
     protected $signature = 'sync-env:show-diffs
                             {--a|all : Show all keys including identical ones}
-                            {--b|include-backup : Include backup files in diff view}';
+                            {--b|include-backup : Include backup files in diff view}
+                            {--only= : Only show these env files (comma-separated, e.g., .env,.env.staging)}
+                            {--exclude= : Exclude these env files (comma-separated, e.g., .env.testing)}';
 
     protected $description = 'Show differences between .env.example and other .env files.';
 
@@ -59,6 +61,12 @@ final class ShowDiffsCommand extends Command
             $allEnvFilePaths = $allEnvFilePaths->reject(fn ($path): bool => (bool) Str::match('/^\.env.*?.backup\./', basename($path)));
         }
 
+        $allEnvFilePaths = $this->filterEnvFiles($allEnvFilePaths, $exampleEnvPath);
+
+        if ($allEnvFilePaths->count() < 2) {
+            throw new Exception('At least 2 env files are required to show differences. Found: ' . $allEnvFilePaths->map(fn ($path): string => basename($path))->implode(', '));
+        }
+
         $sourceData = $this->parseEnvFile($exampleEnvPath, true);
 
         $this->checkForInvalidKeys($sourceData);
@@ -71,6 +79,7 @@ final class ShowDiffsCommand extends Command
             ->keyBy('key')
             ->toArray();
 
+        $includeExample = $allEnvFilePaths->contains($exampleEnvPath);
         $envFilesPathsToProcess = $allEnvFilePaths->reject(fn ($path): bool => $path === $exampleEnvPath);
 
         $keys = array_keys($sourceDataKeyed);
@@ -83,7 +92,10 @@ final class ShowDiffsCommand extends Command
             $processedEnvs[basename($envFilePath)] = $targetKeyValue;
         }
 
-        $headerRow = ['Key', '.env.example Value'];
+        $headerRow = ['Key'];
+        if ($includeExample) {
+            $headerRow[] = '.env.example Value';
+        }
         foreach (array_keys($processedEnvs) as $envFileName) {
             $headerRow[] = $envFileName . ' Value';
         }
@@ -94,16 +106,28 @@ final class ShowDiffsCommand extends Command
             $column[] = $key;
 
             $sourceValue = $sourceDataKeyed[$key]['value'];
-            $column[] = $sourceValue;
+            if ($includeExample) {
+                $column[] = $sourceValue;
+            }
 
-            $isDifferent = false;
+            $targetValues = [];
             foreach ($processedEnvs as $targetKeyValue) {
                 $targetValue = isset($targetKeyValue[$key]) ? $targetKeyValue[$key]['value'] : 'N/A';
                 $column[] = $targetValue;
+                $targetValues[] = $targetValue;
+            }
 
-                if ($targetValue !== 'N/A' && $sourceValue !== $targetValue) {
-                    $isDifferent = true;
+            $isDifferent = false;
+            if ($includeExample) {
+                foreach ($targetValues as $targetValue) {
+                    if ($targetValue !== 'N/A' && $sourceValue !== $targetValue) {
+                        $isDifferent = true;
+                        break;
+                    }
                 }
+            } else {
+                $uniqueValues = array_unique(array_filter($targetValues, fn ($v): bool => $v !== 'N/A'));
+                $isDifferent = count($uniqueValues) > 1;
             }
 
             if ($this->option('all') === true || $isDifferent) {
@@ -112,6 +136,36 @@ final class ShowDiffsCommand extends Command
         }
 
         $this->table($headerRow, $rows);
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, string>  $allEnvFilePaths
+     * @return \Illuminate\Support\Collection<int, string>
+     */
+    private function filterEnvFiles(\Illuminate\Support\Collection $allEnvFilePaths, string $exampleEnvPath): \Illuminate\Support\Collection
+    {
+        /** @var ?string */
+        $only = $this->option('only');
+        /** @var ?string */
+        $exclude = $this->option('exclude');
+
+        if ($only !== null) {
+            $onlyFiles = array_map('trim', explode(',', $only));
+
+            $allEnvFilePaths = $allEnvFilePaths->filter(fn ($path): bool => in_array(basename($path), $onlyFiles, true));
+        }
+
+        if ($exclude !== null) {
+            $excludeFiles = array_map('trim', explode(',', $exclude));
+
+            $allEnvFilePaths = $allEnvFilePaths->reject(fn ($path): bool => in_array(basename($path), $excludeFiles, true));
+        }
+
+        if ($allEnvFilePaths->count() < 2 && !$allEnvFilePaths->contains($exampleEnvPath)) {
+            $allEnvFilePaths->push($exampleEnvPath);
+        }
+
+        return $allEnvFilePaths;
     }
 
     /**
