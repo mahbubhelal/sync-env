@@ -126,7 +126,7 @@ final class ShowDiffsCommand extends Command
                     }
                 }
             } else {
-                $uniqueValues = array_unique(array_filter($targetValues, fn ($v): bool => $v !== 'N/A'));
+                $uniqueValues = array_unique(array_filter($targetValues, fn (?string $v): bool => $v !== 'N/A'));
                 $isDifferent = count($uniqueValues) > 1;
             }
 
@@ -150,13 +150,13 @@ final class ShowDiffsCommand extends Command
         $exclude = $this->option('exclude');
 
         if ($only !== null) {
-            $onlyFiles = array_map('trim', explode(',', $only));
+            $onlyFiles = array_map(trim(...), explode(',', $only));
 
             $allEnvFilePaths = $allEnvFilePaths->filter(fn ($path): bool => in_array(basename($path), $onlyFiles, true));
         }
 
         if ($exclude !== null) {
-            $excludeFiles = array_map('trim', explode(',', $exclude));
+            $excludeFiles = array_map(trim(...), explode(',', $exclude));
 
             $allEnvFilePaths = $allEnvFilePaths->reject(fn ($path): bool => in_array(basename($path), $excludeFiles, true));
         }

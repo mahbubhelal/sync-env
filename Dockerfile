@@ -1,25 +1,12 @@
-FROM z3r0ck/nginx-base:8.3-vm
+FROM php:8.3.29-cli-alpine3.23
 
-# Build args
-ARG HOST_GID=1000 \
-    HOST_UID=1000
+RUN apk update && apk add --no-cache \
+    $PHPIZE_DEPS zip unzip
 
-ENV ENV="/root/.ashrc"
+RUN pecl install pcov && docker-php-ext-enable pcov
 
-# Install shadow (enables groupmod and usermod) and runuser
-RUN apk add --no-cache shadow runuser
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Set working directory
+ENV COMPOSER_HOME=/tmp/composer
+
 WORKDIR /var/www/app
-
-# Copy app files
-COPY . .
-
-# Setup permissions
-RUN groupmod -g $HOST_GID www-data \
-    && usermod -u $HOST_UID www-data
-
-# Setup alias
-COPY ./docker/alias /root/.ashrc
-
-CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisord.conf"]

@@ -3,8 +3,11 @@ services:
         container_name: sync-env_local
         build:
             context: .
-            args:
-                HOST_UID: ${UID:-1000}
-                HOST_GID: ${GID:-1000}
+        working_dir: /var/www/app
         volumes:
             - .:/var/www/app
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+        user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+        tty: true
+        stdin_open: true
