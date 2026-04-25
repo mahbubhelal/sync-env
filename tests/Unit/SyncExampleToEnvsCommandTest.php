@@ -54,18 +54,18 @@ it('can sync from source to target env file', function (): void {
     artisan('sync-env:example-to-envs')
         ->assertExitCode(0);
 
-    expect(File::get(base_path('.env')))->toBe(
-        <<<'ENV'
-            APP_NAME=OldApp
-            APP_ENV=production
-            APP_DEBUG=true
-            DB_CONNECTION=mysql
+    $expected = <<<'ENV'
+        APP_NAME=OldApp
+        APP_ENV=production
+        APP_DEBUG=true
+        DB_CONNECTION=mysql
 
-            # Custom
-            CUSTOM_KEY="custom value"
-            ANOTHER_KEY="another value"
-            ENV
-    );
+        # Custom
+        CUSTOM_KEY="custom value"
+        ANOTHER_KEY="another value"
+        ENV;
+
+    expect(File::get(base_path('.env')))->toBe($expected . "\n");
 
     expect(File::get(base_path('.env.backup.') . now()->format('Y-m-d_H-i-s')))->toBe($targetContent);
 });
@@ -93,7 +93,7 @@ it('can sync from source to multiple target env files', function (): void {
         '.env',
         '.env.testing',
         '.env.staging',
-        '.env.procution',
+        '.env.production',
     ];
 
     File::put(base_path('.env.example'), $sourceContent);
@@ -104,19 +104,19 @@ it('can sync from source to multiple target env files', function (): void {
     artisan('sync-env:example-to-envs')
         ->assertExitCode(0);
 
-    foreach ($envFiles as $envFile) {
-        expect(File::get(base_path($envFile)))->toBe(
-            <<<'ENV'
-                APP_NAME=OldApp
-                APP_ENV=production
-                APP_DEBUG=true
-                DB_CONNECTION=mysql
+    $expected = <<<'ENV'
+        APP_NAME=OldApp
+        APP_ENV=production
+        APP_DEBUG=true
+        DB_CONNECTION=mysql
 
-                # Custom
-                CUSTOM_KEY="custom value"
-                ANOTHER_KEY="another value"
-                ENV
-        );
+        # Custom
+        CUSTOM_KEY="custom value"
+        ANOTHER_KEY="another value"
+        ENV;
+
+    foreach ($envFiles as $envFile) {
+        expect(File::get(base_path($envFile)))->toBe($expected . "\n");
 
         expect(File::get(base_path($envFile . '.backup.') . now()->format('Y-m-d_H-i-s')))->toBe($targetContent);
     }
@@ -198,163 +198,18 @@ it('fails when duplicate keys are present in source', function (): void {
         ->assertExitCode(1);
 });
 
-it('fails when invalid values are present in source', function ($line, $exitCode): void {
+it('fails when invalid values are present in source', function (string $line, $exitCode): void {
     File::put(base_path('.env.example'), $line);
 
     artisan('sync-env:example-to-envs')
         ->expectsOutputToContain($exitCode === 1 ? 'Invalid value found in line 1:' : null)
         ->assertExitCode($exitCode);
     if ($exitCode === 0) {
-        expect(File::get(base_path('.env')))->toBe($line);
+        expect(File::get(base_path('.env')))->toBe($line . "\n");
     } else {
         expect(File::get(base_path('.env')))->toBe('');
     }
-})->with([
-    [
-        <<<'ENV'
-            SINGLE_VALUE=single
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            IN_SINGLE_QUOTES='single quotes'
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            IN_DOUBLE_QUOTES="double quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            NESTED_QUOTES="nested 'single' quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ESCAPED_QUOTES="escaped \"double\" quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            NESTED_SINGLE_QUOTES='nested "double" quotes'
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ESCAPED_DOUBLE_QUOTES="escaped \"double\" quotes with 'single' quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ANOTHER_KEY_REFERENCE=${SINGLE_VALUE}_reference
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ANOTHER_KEY_IN_SINGLE_QUOTES='${SINGLE_VALUE}_in_quotes'
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            MISSING="${_VALUE}_in_quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ANOTHER_KEY_IN_DOUBLE_QUOTES="${SINGLE_VALUE}_in_quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ANOTHER_KEY_WITH_ESCAPED_QUOTES="escaped \${SINGLE_VALUE}_in_quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ANOTHER_KEY_IN_DOUBLE_QUOTES_WITH_ESCAPED_QUOTES="escaped \${SINGLE_VALUE}_in_quotes with \"double\" quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            INVALID_LEADING_SPACE= leadingSpace
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_SPACE_WITHIN_VALUE=leading Space
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_ESCAPED_SINGLE_QUOTES='escaped \'single\' quotes'
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_NESTED_SINGLE_QUOTES_ESCAPED='nested \'single\' quotes with "double" quotes'
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_UNCLOSED_SINGLE_QUOTES='unclosed single quotes
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_ESCAPED_BACKSLASH_IN_SINGLE_QUOTES='escaped backslash at end of line\\
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_QUOTES="mismatched 'quotes'""
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_QUOTES_IN_SINGLE_QUOTES='mismatched "quotes"''
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_VALUE_REFERENCE=${VAl UE}
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_A_VALUE_REFERENCE=${ VAlUE}
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_B_VALUE_REFERENCE=${VAlUE }
-            ENV,
-        1,
-    ],
-]);
+})->with('env_values');
 
 it('creates a backup of the target file before syncing', function (): void {
     $sourceContent = <<<'ENV'
@@ -448,8 +303,7 @@ it('preserves comments and empty lines', function (): void {
     artisan('sync-env:example-to-envs')
         ->assertExitCode(0);
 
-    $result = File::get(base_path('.env'));
-    expect($result)->toBe($sourceContent);
+    expect(File::get(base_path('.env')))->toBe($sourceContent . "\n");
 });
 
 it('outputs message when additional .env.* files are found', function (): void {
@@ -544,5 +398,64 @@ it('does not output warning for additional keys in target without verbose flag',
 
     artisan('sync-env:example-to-envs')
         ->doesntExpectOutputToContain('Additional keys found in target file')
+        ->assertExitCode(0);
+});
+
+it('does not modify files when --dry-run option is used', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        APP_DEBUG=true
+        ENV;
+
+    $targetContent = <<<'ENV'
+        APP_NAME=OldApp
+        EXTRA_KEY=extra
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $targetContent);
+
+    artisan('sync-env:example-to-envs --dry-run')
+        ->expectsOutputToContain('[DRY RUN] Processing file:')
+        ->expectsOutputToContain('Keys to add from source: APP_DEBUG')
+        ->expectsOutputToContain('Keys to remove (not in source): EXTRA_KEY')
+        ->expectsOutputToContain('[DRY RUN] No files were modified.')
+        ->assertExitCode(0);
+
+    expect(File::get(base_path('.env')))->toBe($targetContent);
+    expect(File::glob(base_path('.env.backup.*')))->toBeEmpty();
+});
+
+it('reports no changes needed on --dry-run when files are in sync', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $sourceContent);
+
+    artisan('sync-env:example-to-envs --dry-run')
+        ->expectsOutputToContain('No changes needed.')
+        ->expectsOutputToContain('[DRY RUN] No files were modified.')
+        ->assertExitCode(0);
+
+    expect(File::get(base_path('.env')))->toBe($sourceContent);
+});
+
+it('does not warn for matching comments with verbose flag', function (): void {
+    $sourceContent = <<<'ENV'
+        # Same comment
+        APP_NAME=TestApp
+        ENV;
+    $targetContent = <<<'ENV'
+        # Same comment
+        APP_NAME=OldApp
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $targetContent);
+
+    artisan('sync-env:example-to-envs -v')
+        ->doesntExpectOutputToContain('Comment differs at line')
         ->assertExitCode(0);
 });

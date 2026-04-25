@@ -53,11 +53,15 @@ it('can show diff between source and target env file', function (): void {
 
     artisan('sync-env:show-diffs')
         ->expectsTable(
-            ['Key', '.env.example Value', '.env Value'],
+            ['#', 'Key', '.env.example Value', '.env Value'],
             [
-                ['APP_NAME', 'TestApp', 'OldApp'],
-                ['APP_ENV', 'local', 'production'],
-                ['ANOTHER_KEY', '\'another_value\'', '"another value"'],
+                [1, 'APP_NAME', 'TestApp', 'OldApp'],
+                [2, 'APP_ENV', 'local', 'production'],
+                [3, 'APP_DEBUG', 'true', 'N/A'],
+                [4, 'DB_CONNECTION', 'mysql', 'N/A'],
+                [7, 'CUSTOM_KEY', '"custom value"', 'N/A'],
+                [8, 'ANOTHER_KEY', '\'another_value\'', '"another value"'],
+                ['-', 'EXISTING_KEY', 'N/A', 'existing_value'],
             ],
         );
 });
@@ -86,14 +90,15 @@ it('can show all diff between source and target env file when --all option is us
 
     artisan('sync-env:show-diffs --all')
         ->expectsTable(
-            ['Key', '.env.example Value', '.env Value'],
+            ['#', 'Key', '.env.example Value', '.env Value'],
             [
-                ['APP_NAME', 'TestApp', 'OldApp'],
-                ['APP_ENV', 'local', 'production'],
-                ['APP_DEBUG', 'true', 'N/A'],
-                ['DB_CONNECTION', 'mysql', 'N/A'],
-                ['CUSTOM_KEY', '"custom value"', 'N/A'],
-                ['ANOTHER_KEY', '\'another_value\'', '"another value"'],
+                [1, 'APP_NAME', 'TestApp', 'OldApp'],
+                [2, 'APP_ENV', 'local', 'production'],
+                [3, 'APP_DEBUG', 'true', 'N/A'],
+                [4, 'DB_CONNECTION', 'mysql', 'N/A'],
+                [7, 'CUSTOM_KEY', '"custom value"', 'N/A'],
+                [8, 'ANOTHER_KEY', '\'another_value\'', '"another value"'],
+                ['-', 'EXISTING_KEY', 'N/A', 'existing_value'],
             ],
         );
 });
@@ -128,11 +133,15 @@ it('can show diff between source and multiple target env files', function (): vo
 
     artisan('sync-env:show-diffs')
         ->expectsTable(
-            ['Key', '.env.example Value', '.env Value', '.env.another Value'],
+            ['#', 'Key', '.env.example Value', '.env Value', '.env.another Value'],
             [
-                ['APP_NAME', 'TestApp', 'OldApp', 'App'],
-                ['APP_ENV', 'local', 'production', 'staging'],
-                ['ANOTHER_KEY', '\'another_value\'', '"another value"', 'N/A'],
+                [1, 'APP_NAME', 'TestApp', 'OldApp', 'App'],
+                [2, 'APP_ENV', 'local', 'production', 'staging'],
+                [3, 'APP_DEBUG', 'true', 'N/A', 'N/A'],
+                [4, 'DB_CONNECTION', 'mysql', 'N/A', 'N/A'],
+                [7, 'CUSTOM_KEY', '"custom value"', 'N/A', 'N/A'],
+                [8, 'ANOTHER_KEY', '\'another_value\'', '"another value"', 'N/A'],
+                ['-', 'EXISTING_KEY', 'N/A', 'existing_value', 'N/A'],
             ],
         );
 });
@@ -162,11 +171,15 @@ it('can show diff between source and multiple target env files including backups
 
     artisan('sync-env:show-diffs --include-backup')
         ->expectsTable(
-            ['Key', '.env.example Value', '.env Value', '.env.backup.2025-12-25_00:00:00 Value'],
+            ['#', 'Key', '.env.example Value', '.env Value', '.env.backup.2025-12-25_00:00:00 Value'],
             [
-                ['APP_NAME', 'TestApp', 'OldApp', 'OldApp'],
-                ['APP_ENV', 'local', 'production', 'production'],
-                ['ANOTHER_KEY', '\'another_value\'', '"another value"', '"another value"'],
+                [1, 'APP_NAME', 'TestApp', 'OldApp', 'OldApp'],
+                [2, 'APP_ENV', 'local', 'production', 'production'],
+                [3, 'APP_DEBUG', 'true', 'N/A', 'N/A'],
+                [4, 'DB_CONNECTION', 'mysql', 'N/A', 'N/A'],
+                [7, 'CUSTOM_KEY', '"custom value"', 'N/A', 'N/A'],
+                [8, 'ANOTHER_KEY', '\'another_value\'', '"another value"', '"another value"'],
+                ['-', 'EXISTING_KEY', 'N/A', 'existing_value', 'existing_value'],
             ],
         );
 });
@@ -249,152 +262,7 @@ it('fails when invalid values are present in source', function ($line, $exitCode
     artisan('sync-env:show-diffs')
         ->expectsOutputToContain($exitCode === 1 ? 'Invalid value found in line 1:' : null)
         ->assertExitCode($exitCode);
-})->with([
-    [
-        <<<'ENV'
-            SINGLE_VALUE=single
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            IN_SINGLE_QUOTES='single quotes'
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            IN_DOUBLE_QUOTES="double quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            NESTED_QUOTES="nested 'single' quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ESCAPED_QUOTES="escaped \"double\" quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            NESTED_SINGLE_QUOTES='nested "double" quotes'
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ESCAPED_DOUBLE_QUOTES="escaped \"double\" quotes with 'single' quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ANOTHER_KEY_REFERENCE=${SINGLE_VALUE}_reference
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ANOTHER_KEY_IN_SINGLE_QUOTES='${SINGLE_VALUE}_in_quotes'
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            MISSING="${_VALUE}_in_quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ANOTHER_KEY_IN_DOUBLE_QUOTES="${SINGLE_VALUE}_in_quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ANOTHER_KEY_WITH_ESCAPED_QUOTES="escaped \${SINGLE_VALUE}_in_quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            ANOTHER_KEY_IN_DOUBLE_QUOTES_WITH_ESCAPED_QUOTES="escaped \${SINGLE_VALUE}_in_quotes with \"double\" quotes"
-            ENV,
-        0,
-    ],
-    [
-        <<<'ENV'
-            INVALID_LEADING_SPACE= leadingSpace
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_SPACE_WITHIN_VALUE=leading Space
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_ESCAPED_SINGLE_QUOTES='escaped \'single\' quotes'
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_NESTED_SINGLE_QUOTES_ESCAPED='nested \'single\' quotes with "double" quotes'
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_UNCLOSED_SINGLE_QUOTES='unclosed single quotes
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_ESCAPED_BACKSLASH_IN_SINGLE_QUOTES='escaped backslash at end of line\\
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_QUOTES="mismatched 'quotes'""
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_QUOTES_IN_SINGLE_QUOTES='mismatched "quotes"''
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_VALUE_REFERENCE=${VAl UE}
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_A_VALUE_REFERENCE=${ VAlUE}
-            ENV,
-        1,
-    ],
-    [
-        <<<'ENV'
-            INVALID_B_VALUE_REFERENCE=${VAlUE }
-            ENV,
-        1,
-    ],
-]);
+})->with('env_values');
 
 it('can filter env files with --only option', function (): void {
     $sourceContent = <<<'ENV'
@@ -424,10 +292,10 @@ it('can filter env files with --only option', function (): void {
 
     artisan('sync-env:show-diffs --only=.env.example,.env,.env.staging')
         ->expectsTable(
-            ['Key', '.env.example Value', '.env Value', '.env.staging Value'],
+            ['#', 'Key', '.env.example Value', '.env Value', '.env.staging Value'],
             [
-                ['APP_NAME', 'TestApp', 'ProdApp', 'StagingApp'],
-                ['APP_ENV', 'local', 'production', 'staging'],
+                [1, 'APP_NAME', 'TestApp', 'ProdApp', 'StagingApp'],
+                [2, 'APP_ENV', 'local', 'production', 'staging'],
             ],
         );
 });
@@ -454,10 +322,10 @@ it('includes .env.example by default when --only results in less than 2 files', 
 
     artisan('sync-env:show-diffs --only=.env')
         ->expectsTable(
-            ['Key', '.env.example Value', '.env Value'],
+            ['#', 'Key', '.env.example Value', '.env Value'],
             [
-                ['APP_NAME', 'TestApp', 'ProdApp'],
-                ['APP_ENV', 'local', 'production'],
+                [1, 'APP_NAME', 'TestApp', 'ProdApp'],
+                [2, 'APP_ENV', 'local', 'production'],
             ],
         );
 });
@@ -484,10 +352,10 @@ it('does not include .env.example when --only has 2+ files', function (): void {
 
     artisan('sync-env:show-diffs --only=.env,.env.staging')
         ->expectsTable(
-            ['Key', '.env Value', '.env.staging Value'],
+            ['#', 'Key', '.env Value', '.env.staging Value'],
             [
-                ['APP_NAME', 'ProdApp', 'StagingApp'],
-                ['APP_ENV', 'production', 'staging'],
+                [1, 'APP_NAME', 'ProdApp', 'StagingApp'],
+                [2, 'APP_ENV', 'production', 'staging'],
             ],
         );
 });
@@ -520,10 +388,10 @@ it('can exclude env files with --exclude option', function (): void {
 
     artisan('sync-env:show-diffs --exclude=.env.testing')
         ->expectsTable(
-            ['Key', '.env.example Value', '.env Value', '.env.staging Value'],
+            ['#', 'Key', '.env.example Value', '.env Value', '.env.staging Value'],
             [
-                ['APP_NAME', 'TestApp', 'ProdApp', 'StagingApp'],
-                ['APP_ENV', 'local', 'production', 'staging'],
+                [1, 'APP_NAME', 'TestApp', 'ProdApp', 'StagingApp'],
+                [2, 'APP_ENV', 'local', 'production', 'staging'],
             ],
         );
 });
@@ -550,10 +418,10 @@ it('can exclude .env.example with --exclude option if 2+ files remain', function
 
     artisan('sync-env:show-diffs --exclude=.env.example')
         ->expectsTable(
-            ['Key', '.env Value', '.env.staging Value'],
+            ['#', 'Key', '.env Value', '.env.staging Value'],
             [
-                ['APP_NAME', 'ProdApp', 'StagingApp'],
-                ['APP_ENV', 'production', 'staging'],
+                [1, 'APP_NAME', 'ProdApp', 'StagingApp'],
+                [2, 'APP_ENV', 'production', 'staging'],
             ],
         );
 });
@@ -574,10 +442,10 @@ it('includes .env.example by default when --exclude results in less than 2 files
 
     artisan('sync-env:show-diffs --exclude=.env.example')
         ->expectsTable(
-            ['Key', '.env.example Value', '.env Value'],
+            ['#', 'Key', '.env.example Value', '.env Value'],
             [
-                ['APP_NAME', 'TestApp', 'ProdApp'],
-                ['APP_ENV', 'local', 'production'],
+                [1, 'APP_NAME', 'TestApp', 'ProdApp'],
+                [2, 'APP_ENV', 'local', 'production'],
             ],
         );
 });
@@ -606,4 +474,55 @@ it('fails when less than 2 env files are selected with --exclude', function (): 
     artisan('sync-env:show-diffs --exclude=.env')
         ->expectsOutputToContain('At least 2 env files are required to show differences.')
         ->assertExitCode(1);
+});
+
+it('hides identical source keys by default', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        APP_ENV=local
+        ENV;
+
+    $targetContent = <<<'ENV'
+        APP_NAME=TestApp
+        APP_ENV=production
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $targetContent);
+
+    artisan('sync-env:show-diffs')
+        ->expectsTable(
+            ['#', 'Key', '.env.example Value', '.env Value'],
+            [
+                [2, 'APP_ENV', 'local', 'production'],
+            ],
+        );
+});
+
+it('hides identical extra keys when example is excluded', function (): void {
+    $sourceContent = <<<'ENV'
+        APP_NAME=TestApp
+        ENV;
+
+    $envContent = <<<'ENV'
+        APP_NAME=ProdApp
+        EXTRA_KEY=same
+        ENV;
+
+    $stagingContent = <<<'ENV'
+        APP_NAME=StagingApp
+        EXTRA_KEY=same
+        ENV;
+
+    File::put(base_path('.env.example'), $sourceContent);
+    File::put(base_path('.env'), $envContent);
+    File::put(base_path('.env.staging'), $stagingContent);
+
+    artisan('sync-env:show-diffs --exclude=.env.example')
+        ->expectsTable(
+            ['#', 'Key', '.env Value', '.env.staging Value'],
+            [
+                [1, 'APP_NAME', 'ProdApp', 'StagingApp'],
+            ],
+        );
 });

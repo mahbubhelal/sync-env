@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace Mahbub\SyncEnv\Commands;
 
-use Dotenv\Dotenv;
 use Exception;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\App;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Mahbub\SyncEnv\EnvFileParser;
+use Mahbub\SyncEnv\EnvLine;
+use Mahbub\SyncEnv\ResolvesBasePath;
 
-/**
- * @phpstan-type envLineData array{line_number: int, key: ?string, value: ?string, raw: string, is_comment: bool, is_empty: bool}
- */
 final class ShowDiffsCommand extends Command
 {
+    use ResolvesBasePath;
+
     protected $signature = 'sync-env:show-diffs
                             {--a|all : Show all keys including identical ones}
                             {--b|include-backup : Include backup files in diff view}
@@ -24,10 +25,10 @@ final class ShowDiffsCommand extends Command
 
     protected $description = 'Show differences between .env.example and other .env files.';
 
-    public function handle(): int
+    public function handle(EnvFileParser $parser): int
     {
         try {
-            $this->process();
+            $this->process($parser);
 
             return 0;
         } catch (Exception $e) {
@@ -37,11 +38,9 @@ final class ShowDiffsCommand extends Command
         }
     }
 
-    public function process(): void
+    private function process(EnvFileParser $parser): void
     {
-        if (App::environment('workbench')) {
-            App::setBasePath((string) getcwd()); // @codeCoverageIgnore
-        }
+        $this->resolveBasePath();
 
         $exampleEnvPath = base_path('.env.example');
         $baseEnvPath = base_path('.env');
@@ -54,11 +53,11 @@ final class ShowDiffsCommand extends Command
             throw new Exception('The .env file does not exist in: ' . base_path());
         }
 
-        /** @var \Illuminate\Support\Collection<int, string> */
+        /** @var Collection<int, string> */
         $allEnvFilePaths = collect(File::glob(base_path('.env*')));
 
         if ($this->option('include-backup') !== true) {
-            $allEnvFilePaths = $allEnvFilePaths->reject(fn ($path): bool => (bool) Str::match('/^\.env.*?.backup\./', basename($path)));
+            $allEnvFilePaths = $allEnvFilePaths->reject(fn ($path): bool => (bool) Str::match('/^\.env.*.backup\./', basename($path)));
         }
 
         $allEnvFilePaths = $this->filterEnvFiles($allEnvFilePaths, $exampleEnvPath);
@@ -67,82 +66,172 @@ final class ShowDiffsCommand extends Command
             throw new Exception('At least 2 env files are required to show differences. Found: ' . $allEnvFilePaths->map(fn ($path): string => basename($path))->implode(', '));
         }
 
-        $sourceData = $this->parseEnvFile($exampleEnvPath, true);
+        $sourceData = $parser->parseSource($exampleEnvPath);
 
-        $this->checkForInvalidKeys($sourceData);
-        $this->checkForDuplicateKeys($sourceData);
-        $this->checkForInvalidValues($sourceData);
-
-        /** @var array<string, envLineData> */
+        /** @var array<string, EnvLine> */
         $sourceDataKeyed = collect($sourceData)
-            ->reject(fn ($item): bool => $item['is_comment'] || $item['is_empty'] || $item['key'] === null || $item['key'] === '')
+            ->reject(fn (EnvLine $item): bool => !$item->isKeyValue() || $item->key === null || $item->key === '')
             ->keyBy('key')
             ->toArray();
 
         $includeExample = $allEnvFilePaths->contains($exampleEnvPath);
         $envFilesPathsToProcess = $allEnvFilePaths->reject(fn ($path): bool => $path === $exampleEnvPath);
 
-        $keys = array_keys($sourceDataKeyed);
-        $processedEnvs = [];
+        /** @var array<string, Collection<string, EnvLine>> */
+        $processedEnvs = $this->parseTargetFiles($envFilesPathsToProcess, $parser);
 
-        foreach ($envFilesPathsToProcess as $envFilePath) {
-            $targetData = $this->parseEnvFile($envFilePath);
-            $targetKeyValue = collect($targetData)->keyBy('key');
-
-            $processedEnvs[basename($envFilePath)] = $targetKeyValue;
-        }
-
-        $headerRow = ['Key'];
-        if ($includeExample) {
-            $headerRow[] = '.env.example Value';
-        }
-        foreach (array_keys($processedEnvs) as $envFileName) {
-            $headerRow[] = $envFileName . ' Value';
-        }
-
-        $rows = [];
-        foreach ($keys as $key) {
-            $column = [];
-            $column[] = $key;
-
-            $sourceValue = $sourceDataKeyed[$key]['value'];
-            if ($includeExample) {
-                $column[] = $sourceValue;
-            }
-
-            $targetValues = [];
-            foreach ($processedEnvs as $targetKeyValue) {
-                $targetValue = isset($targetKeyValue[$key]) ? $targetKeyValue[$key]['value'] : 'N/A';
-                $column[] = $targetValue;
-                $targetValues[] = $targetValue;
-            }
-
-            $isDifferent = false;
-            if ($includeExample) {
-                foreach ($targetValues as $targetValue) {
-                    if ($targetValue !== 'N/A' && $sourceValue !== $targetValue) {
-                        $isDifferent = true;
-                        break;
-                    }
-                }
-            } else {
-                $uniqueValues = array_unique(array_filter($targetValues, fn (?string $v): bool => $v !== 'N/A'));
-                $isDifferent = count($uniqueValues) > 1;
-            }
-
-            if ($this->option('all') === true || $isDifferent) {
-                $rows[] = $column;
-            }
-        }
+        $headerRow = $this->buildHeaderRow($includeExample, $processedEnvs);
+        $rows = $this->buildDiffRows($sourceDataKeyed, $processedEnvs, $includeExample);
 
         $this->table($headerRow, $rows);
     }
 
     /**
-     * @param  \Illuminate\Support\Collection<int, string>  $allEnvFilePaths
-     * @return \Illuminate\Support\Collection<int, string>
+     * @param  Collection<int, string>  $envFilePaths
+     * @return array<string, Collection<string, EnvLine>>
      */
-    private function filterEnvFiles(\Illuminate\Support\Collection $allEnvFilePaths, string $exampleEnvPath): \Illuminate\Support\Collection
+    private function parseTargetFiles(Collection $envFilePaths, EnvFileParser $parser): array
+    {
+        $processedEnvs = [];
+
+        foreach ($envFilePaths as $envFilePath) {
+            $targetData = $parser->parse($envFilePath);
+            $targetKeyValue = collect($targetData)
+                ->reject(fn (EnvLine $item): bool => !$item->isKeyValue())
+                ->keyBy('key');
+
+            $processedEnvs[basename($envFilePath)] = $targetKeyValue;
+        }
+
+        return $processedEnvs;
+    }
+
+    /**
+     * @param  array<string, Collection<string, EnvLine>>  $processedEnvs
+     * @return list<string>
+     */
+    private function buildHeaderRow(bool $includeExample, array $processedEnvs): array
+    {
+        $headerRow = ['#', 'Key'];
+
+        if ($includeExample) {
+            $headerRow[] = '.env.example Value';
+        }
+
+        foreach (array_keys($processedEnvs) as $envFileName) {
+            $headerRow[] = $envFileName . ' Value';
+        }
+
+        return $headerRow;
+    }
+
+    /**
+     * @param  array<string, EnvLine>  $sourceDataKeyed
+     * @param  array<string, Collection<string, EnvLine>>  $processedEnvs
+     * @return list<list<string|int|null>>
+     */
+    private function buildDiffRows(array $sourceDataKeyed, array $processedEnvs, bool $includeExample): array
+    {
+        $sourceKeys = array_keys($sourceDataKeyed);
+        $showAll = $this->option('all') === true;
+        $rows = [];
+
+        foreach ($sourceKeys as $key) {
+            $sourceValue = $sourceDataKeyed[$key]->value;
+            $targetValues = $this->collectTargetValues($key, $processedEnvs);
+
+            if (!$showAll && !$this->hasDifferences($sourceValue, $targetValues, $includeExample)) {
+                continue;
+            }
+
+            $rows[] = $this->buildRow($sourceDataKeyed[$key]->lineNumber, $key, $sourceValue, $targetValues, $includeExample);
+        }
+
+        foreach ($this->findExtraKeys($processedEnvs, $sourceKeys) as $extraKey) {
+            $targetValues = $this->collectTargetValues($extraKey, $processedEnvs);
+
+            if (!$showAll && !$this->hasDifferences(null, $targetValues, $includeExample)) {
+                continue;
+            }
+
+            $rows[] = $this->buildRow('-', $extraKey, null, $targetValues, $includeExample);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  array<string, Collection<string, EnvLine>>  $processedEnvs
+     * @return list<string|null>
+     */
+    private function collectTargetValues(string $key, array $processedEnvs): array
+    {
+        $values = [];
+
+        foreach ($processedEnvs as $targetKeyValue) {
+            $values[] = $targetKeyValue->has($key) ? $targetKeyValue->get($key)?->value : 'N/A';
+        }
+
+        return $values;
+    }
+
+    /**
+     * @param  list<string|null>  $targetValues
+     */
+    private function hasDifferences(?string $sourceValue, array $targetValues, bool $includeExample): bool
+    {
+        if ($includeExample) {
+            foreach ($targetValues as $targetValue) {
+                if ($sourceValue !== $targetValue) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return count(array_unique($targetValues)) > 1;
+    }
+
+    /**
+     * @param  list<string|null>  $targetValues
+     * @return list<string|int|null>
+     */
+    private function buildRow(string|int $lineNumber, string $key, ?string $sourceValue, array $targetValues, bool $includeExample): array
+    {
+        $column = [$lineNumber, $key];
+
+        if ($includeExample) {
+            $column[] = $sourceValue ?? 'N/A';
+        }
+
+        return [...$column, ...$targetValues];
+    }
+
+    /**
+     * @param  array<string, Collection<string, EnvLine>>  $processedEnvs
+     * @param  list<string>  $sourceKeys
+     * @return list<string>
+     */
+    private function findExtraKeys(array $processedEnvs, array $sourceKeys): array
+    {
+        /** @var array<string, true> */
+        $allTargetKeysMap = [];
+
+        foreach ($processedEnvs as $targetKeyValue) {
+            foreach ($targetKeyValue->keys() as $targetKey) {
+                $allTargetKeysMap[$targetKey] = true;
+            }
+        }
+
+        return array_values(array_diff(array_keys($allTargetKeysMap), $sourceKeys));
+    }
+
+    /**
+     * @param  Collection<int, string>  $allEnvFilePaths
+     * @return Collection<int, string>
+     */
+    private function filterEnvFiles(Collection $allEnvFilePaths, string $exampleEnvPath): Collection
     {
         /** @var ?string */
         $only = $this->option('only');
@@ -166,126 +255,5 @@ final class ShowDiffsCommand extends Command
         }
 
         return $allEnvFilePaths;
-    }
-
-    /**
-     * @return envLineData[]
-     */
-    private function parseEnvFile(string $path, bool $checkForLeadingTrailingSpaces = false): array
-    {
-        $content = File::get($path);
-        $lines = preg_split("/(\r\n|\n|\r)/", $content);
-
-        if ($lines === false) {
-            return []; // @codeCoverageIgnore
-        }
-
-        $lineNumber = 1;
-        $lineData = [];
-
-        foreach ($lines as $line) {
-            if ($checkForLeadingTrailingSpaces && (Str::startsWith($line, ' ') || Str::endsWith($line, ' '))) {
-                throw new Exception("Invalid entry found in line {$lineNumber}: {$line}. Leading or trailing spaces are not allowed.");
-            }
-
-            $key = null;
-            $value = null;
-            $isComment = str_starts_with(trim($line), '#');
-
-            if (!$isComment && str_contains($line, '=')) {
-                [$key, $value] = explode('=', $line, 2);
-            }
-
-            $lineData[$lineNumber] = [
-                'line_number' => $lineNumber,
-                'key' => $key,
-                'value' => $value,
-                'raw' => $line,
-                'is_comment' => $isComment,
-                'is_empty' => $line === '',
-            ];
-
-            $lineNumber++;
-        }
-
-        return $lineData;
-    }
-
-    /**
-     * @param  envLineData[]  $data
-     */
-    private function checkForInvalidKeys(array $data): void
-    {
-        foreach ($data as $lineNumber => $entry) {
-            if ($entry['is_empty']) {
-                continue;
-            }
-
-            if ($entry['is_comment']) {
-                continue;
-            }
-
-            $key = (string) $entry['key'];
-
-            if ($key === '' || preg_match('/^[A-Z][A-Z0-9_]+$/', $key) !== 1) {
-                throw new Exception("Invalid key found in line {$lineNumber}: {$key}. Keys must start with an uppercase letter and contain only uppercase letters, numbers, and underscores.");
-            }
-        }
-    }
-
-    /**
-     * @param  envLineData[]  $data
-     */
-    private function checkForDuplicateKeys(array $data): void
-    {
-        $keys = [];
-
-        foreach ($data as $lineNumber => $entry) {
-            if ($entry['is_empty']) {
-                continue;
-            }
-
-            if ($entry['is_comment']) {
-                continue;
-            }
-
-            $key = (string) $entry['key'];
-
-            if (isset($keys[$key])) {
-                throw new Exception("Duplicate key found in line {$keys[$key]} and {$lineNumber}: {$key}");
-            }
-
-            $keys[$key] = $lineNumber;
-        }
-    }
-
-    /**
-     * @param  envLineData[]  $data
-     */
-    private function checkForInvalidValues(array $data): void
-    {
-        foreach ($data as $lineNumber => $entry) {
-            if ($entry['is_empty']) {
-                continue;
-            }
-
-            if ($entry['is_comment']) {
-                continue;
-            }
-
-            $value = (string) $entry['value'];
-
-            if (Str::startsWith($value, ' ') || Str::endsWith($value, ' ')) {
-                throw new Exception("Invalid value found in line {$lineNumber}: {$value}. Error: Leading or trailing spaces are not allowed.");
-            }
-
-            try {
-                Dotenv::parse($entry['raw']);
-            } catch (Exception $e) {
-                $message = str_replace('Failed to parse dotenv file. ', '', $e->getMessage());
-
-                throw new Exception("Invalid value found in line {$lineNumber}: {$message}", $e->getCode(), $e);
-            }
-        }
     }
 }

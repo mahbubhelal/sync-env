@@ -31,8 +31,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Mahbub\\SyncEnv\\": "src",
-            "Database\\Factories\\Mahbub\\SyncEnv\\": "database/factories"
+            "Mahbub\\SyncEnv\\": "src"
         }
     },
     "autoload-dev": {

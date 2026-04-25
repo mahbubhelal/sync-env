@@ -4,31 +4,38 @@ declare(strict_types=1);
 
 namespace Mahbub\SyncEnv\Commands;
 
-use Dotenv\Dotenv;
 use Exception;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\App;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Mahbub\SyncEnv\EnvFileParser;
+use Mahbub\SyncEnv\EnvLine;
+use Mahbub\SyncEnv\ResolvesBasePath;
 
-/**
- * @phpstan-type envLineData array{line_number: int, key: ?string, value: ?string, raw: string, is_comment: bool, is_empty: bool}
- */
 final class SyncExampleToEnvsCommand extends Command
 {
+    use ResolvesBasePath;
+
     protected $signature = 'sync-env:example-to-envs
                             {--N|no-backup : Do not create a backup of the target .env file before syncing}
-                            {--r|remove-backups : Remove previously created backup files}';
+                            {--r|remove-backups : Remove previously created backup files}
+                            {--d|dry-run : Preview changes without writing to files}';
 
-    protected $description = 'Sync environment keys from one the .env.example file to other .env files, preserving existing values in the target files.';
+    protected $description = 'Sync environment keys from the .env.example file to other .env files, preserving existing values in the target files.';
 
-    public function handle(): int
+    public function handle(EnvFileParser $parser): int
     {
         try {
-            $this->process();
+            $this->process($parser);
 
             $this->newLine();
-            $this->info('Environment files synchronized successfully.');
+
+            if ($this->option('dry-run') === true) {
+                $this->info('[DRY RUN] No files were modified.');
+            } else {
+                $this->info('Environment files synchronized successfully.');
+            }
 
             return 0;
         } catch (Exception $e) {
@@ -38,11 +45,9 @@ final class SyncExampleToEnvsCommand extends Command
         }
     }
 
-    public function process(): void
+    private function process(EnvFileParser $parser): void
     {
-        if (App::environment('workbench')) {
-            App::setBasePath((string) getcwd()); // @codeCoverageIgnore
-        }
+        $this->resolveBasePath();
 
         $exampleEnvPath = base_path('.env.example');
         $baseEnvPath = base_path('.env');
@@ -59,9 +64,9 @@ final class SyncExampleToEnvsCommand extends Command
             $this->info('Created empty .env file in: ' . base_path());
         }
 
-        /** @var \Illuminate\Support\Collection<int, string> */
+        /** @var Collection<int, string> */
         $allEnvFilePaths = collect(File::glob(base_path('.env*')));
-        $allEnvFilePaths = $allEnvFilePaths->reject(fn ($path): bool => (bool) Str::match('/^\.env.*?.backup\./', basename($path)));
+        $allEnvFilePaths = $allEnvFilePaths->reject(fn ($path): bool => (bool) Str::match('/^\.env.*.backup\./', basename($path)));
 
         $additionalEnvFiles = $allEnvFilePaths
             ->map(fn ($path): string => basename($path))
@@ -77,29 +82,49 @@ final class SyncExampleToEnvsCommand extends Command
             ));
         }
 
-        $sourceData = $this->parseEnvFile($exampleEnvPath, true);
-
-        $this->checkForInvalidKeys($sourceData);
-        $this->checkForDuplicateKeys($sourceData);
-        $this->checkForInvalidValues($sourceData);
+        $sourceData = $parser->parseSource($exampleEnvPath);
 
         $envFilesPathsToProcess = $allEnvFilePaths->reject(fn ($path): bool => $path === $exampleEnvPath);
 
         foreach ($envFilesPathsToProcess as $envFilePath) {
-            $this->processEnvFile($envFilePath, $sourceData);
+            $this->processEnvFile($envFilePath, $sourceData, $parser);
         }
     }
 
     /**
-     * @param  envLineData[]  $sourceData
+     * @param  array<int, EnvLine>  $sourceData
      */
-    private function processEnvFile(string $targetPath, array $sourceData): void
+    private function processEnvFile(string $targetPath, array $sourceData, EnvFileParser $parser): void
     {
-        $this->newLine();
-        $this->info('Processing file: ' . basename($targetPath));
+        $isDryRun = $this->option('dry-run') === true;
 
+        $this->newLine();
+        $this->info(($isDryRun ? '[DRY RUN] ' : '') . 'Processing file: ' . basename($targetPath));
+
+        if (!$isDryRun) {
+            $this->handleBackups($targetPath);
+        }
+
+        $targetData = $parser->parse($targetPath);
+        $targetKeyValue = collect($targetData)
+            ->reject(fn (EnvLine $item): bool => !$item->isKeyValue())
+            ->keyBy('key');
+
+        $result = $this->buildSyncedContent($sourceData, $targetData, $targetKeyValue);
+
+        if ($isDryRun) {
+            $this->reportDryRun($result['addedKeys'], $result['removedKeys']);
+        } else {
+            $content = rtrim(implode("\n", $result['content']), "\n") . "\n";
+
+            File::put($targetPath, $content);
+        }
+    }
+
+    private function handleBackups(string $targetPath): void
+    {
         if ($this->option('remove-backups') === true) {
-            /** @var \Illuminate\Support\Collection<int, string> */
+            /** @var Collection<int, string> */
             $backupFiles = collect(File::glob($targetPath . '.backup.*'));
 
             if ($backupFiles->isNotEmpty()) {
@@ -125,186 +150,123 @@ final class SyncExampleToEnvsCommand extends Command
 
             $this->info("Backup created: {$backupPath}");
         }
+    }
 
-        $targetData = $this->parseEnvFile($targetPath);
-        $targetKeyValue = collect($targetData)->keyBy('key');
+    /**
+     * @param  array<int, EnvLine>  $sourceData
+     * @param  array<int, EnvLine>  $targetData
+     * @param  Collection<string, EnvLine>  $targetKeyValue
+     * @return array{content: list<string>, addedKeys: list<string>, removedKeys: list<string>}
+     */
+    private function buildSyncedContent(array $sourceData, array $targetData, Collection $targetKeyValue): array
+    {
         $targetContent = [];
+        $addedKeys = [];
 
         foreach ($sourceData as $lineNumber => $data) {
-            if ($data['is_empty']) {
+            if ($data->isEmpty) {
                 $targetContent[] = '';
 
                 continue;
             }
 
-            if ($data['is_comment']) {
-                if ($this->output->isVerbose() && (!isset($targetData[$lineNumber]) || $targetData[$lineNumber]['raw'] !== $data['raw'])) {
-                    $this->warn(sprintf(
-                        <<<'STR'
-                            Comment differs at line %d:
-                                Source: %s
-                                Target: %s
-                            STR,
-                        $lineNumber,
-                        $data['raw'],
-                        $targetData[$lineNumber]['raw'] ?? 'N/A'
-                    ));
-                }
-
-                $targetContent[] = $data['raw'];
+            if ($data->isComment) {
+                $this->warnCommentDiff($lineNumber, $data, $targetData);
+                $targetContent[] = $data->raw;
 
                 continue;
             }
 
-            $key = $data['key'];
-            $value = ($targetKeyValue[$key]['value'] ?? null) ?? $data['value'];
+            $key = (string) $data->key;
+            $existingValue = $targetKeyValue->get($key)?->value;
 
-            if ($this->output->isVerbose() && (!isset($targetData[$lineNumber]) || $targetData[$lineNumber]['key'] !== $key)) {
-                $this->warn(sprintf(
-                    <<<'STR'
-                        Key differs at line %d:
-                            Source: %s=%s
-                            Target: %s
-                        STR,
-                    $lineNumber,
-                    $key,
-                    $data['value'],
-                    $targetData[$lineNumber]['key'] ?? 'N/A'
-                ));
+            if ($existingValue === null) {
+                $addedKeys[] = $key;
             }
 
-            unset($targetKeyValue[$data['key']]);
+            $this->warnKeyDiff($lineNumber, $data, $targetData);
 
-            $targetContent[] = "{$key}={$value}";
+            unset($targetKeyValue[$data->key]);
+
+            $targetContent[] = "{$key}=" . ($existingValue ?? $data->value);
         }
 
-        $targetKeyValue = $targetKeyValue->reject(fn ($item, $key): bool => $key === '');
+        $removedKeys = array_values($targetKeyValue->keys()->all());
 
         if ($this->output->isVerbose() && $targetKeyValue->isNotEmpty()) {
             $this->warn('Additional keys found in target file that are not present in source file: ' . $targetKeyValue->keys()->implode(', '));
         }
 
-        File::put($targetPath, implode("\n", $targetContent));
+        return ['content' => $targetContent, 'addedKeys' => $addedKeys, 'removedKeys' => $removedKeys];
     }
 
     /**
-     * @return envLineData[]
+     * @param  array<int, EnvLine>  $targetData
      */
-    private function parseEnvFile(string $path, bool $checkForLeadingTrailingSpaces = false): array
+    private function warnCommentDiff(int $lineNumber, EnvLine $source, array $targetData): void
     {
-        $content = File::get($path);
-        $lines = preg_split("/(\r\n|\n|\r)/", $content);
-
-        if ($lines === false) {
-            return []; // @codeCoverageIgnore
+        if (!$this->output->isVerbose()) {
+            return;
         }
 
-        $lineNumber = 1;
-        $lineData = [];
-
-        foreach ($lines as $line) {
-            if ($checkForLeadingTrailingSpaces && (Str::startsWith($line, ' ') || Str::endsWith($line, ' '))) {
-                throw new Exception("Invalid entry found in line {$lineNumber}: {$line}. Leading or trailing spaces are not allowed.");
-            }
-
-            $key = null;
-            $value = null;
-            $isComment = str_starts_with(trim($line), '#');
-
-            if (!$isComment && str_contains($line, '=')) {
-                [$key, $value] = explode('=', $line, 2);
-            }
-
-            $lineData[$lineNumber] = [
-                'line_number' => $lineNumber,
-                'key' => $key,
-                'value' => $value,
-                'raw' => $line,
-                'is_comment' => $isComment,
-                'is_empty' => $line === '',
-            ];
-
-            $lineNumber++;
+        if (isset($targetData[$lineNumber]) && $targetData[$lineNumber]->raw === $source->raw) {
+            return;
         }
 
-        return $lineData;
+        $this->warn(sprintf(
+            <<<'STR'
+                Comment differs at line %d:
+                    Source: %s
+                    Target: %s
+                STR,
+            $lineNumber,
+            $source->raw,
+            $targetData[$lineNumber]->raw ?? 'N/A'
+        ));
     }
 
     /**
-     * @param  envLineData[]  $data
+     * @param  array<int, EnvLine>  $targetData
      */
-    private function checkForInvalidKeys(array $data): void
+    private function warnKeyDiff(int $lineNumber, EnvLine $source, array $targetData): void
     {
-        foreach ($data as $lineNumber => $entry) {
-            if ($entry['is_empty']) {
-                continue;
-            }
-
-            if ($entry['is_comment']) {
-                continue;
-            }
-
-            $key = (string) $entry['key'];
-
-            if ($key === '' || preg_match('/^[A-Z][A-Z0-9_]+$/', $key) !== 1) {
-                throw new Exception("Invalid key found in line {$lineNumber}: {$key}. Keys must start with an uppercase letter and contain only uppercase letters, numbers, and underscores.");
-            }
+        if (!$this->output->isVerbose()) {
+            return;
         }
+
+        if (isset($targetData[$lineNumber]) && $targetData[$lineNumber]->key === $source->key) {
+            return;
+        }
+
+        $this->warn(sprintf(
+            <<<'STR'
+                Key differs at line %d:
+                    Source: %s=%s
+                    Target: %s
+                STR,
+            $lineNumber,
+            $source->key,
+            $source->value,
+            $targetData[$lineNumber]->key ?? 'N/A'
+        ));
     }
 
     /**
-     * @param  envLineData[]  $data
+     * @param  list<string>  $addedKeys
+     * @param  list<string>  $removedKeys
      */
-    private function checkForDuplicateKeys(array $data): void
+    private function reportDryRun(array $addedKeys, array $removedKeys): void
     {
-        $keys = [];
-
-        foreach ($data as $lineNumber => $entry) {
-            if ($entry['is_empty']) {
-                continue;
-            }
-
-            if ($entry['is_comment']) {
-                continue;
-            }
-
-            $key = (string) $entry['key'];
-
-            if (isset($keys[$key])) {
-                throw new Exception("Duplicate key found in line {$keys[$key]} and {$lineNumber}: {$key}");
-            }
-
-            $keys[$key] = $lineNumber;
+        if (count($addedKeys) > 0) {
+            $this->line('  Keys to add from source: ' . implode(', ', $addedKeys));
         }
-    }
 
-    /**
-     * @param  envLineData[]  $data
-     */
-    private function checkForInvalidValues(array $data): void
-    {
-        foreach ($data as $lineNumber => $entry) {
-            if ($entry['is_empty']) {
-                continue;
-            }
+        if (count($removedKeys) > 0) {
+            $this->line('  Keys to remove (not in source): ' . implode(', ', $removedKeys));
+        }
 
-            if ($entry['is_comment']) {
-                continue;
-            }
-
-            $value = (string) $entry['value'];
-
-            if (Str::startsWith($value, ' ') || Str::endsWith($value, ' ')) {
-                throw new Exception("Invalid value found in line {$lineNumber}: {$value}. Error: Leading or trailing spaces are not allowed.");
-            }
-
-            try {
-                Dotenv::parse($entry['raw']);
-            } catch (Exception $e) {
-                $message = str_replace('Failed to parse dotenv file. ', '', $e->getMessage());
-
-                throw new Exception("Invalid value found in line {$lineNumber}: {$message}", $e->getCode(), $e);
-            }
+        if (count($addedKeys) === 0 && count($removedKeys) === 0) {
+            $this->line('  No changes needed.');
         }
     }
 }
